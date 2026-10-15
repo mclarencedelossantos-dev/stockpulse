@@ -10,7 +10,7 @@ node_modules/
 *.log
 npm-debug.log*
 
-# Runtime datagit add 
+# Runtime data
 pids
 *.pid
 *.seed
