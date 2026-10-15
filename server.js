@@ -1,4 +1,4 @@
-const express = require('express');
+﻿const express = require('express');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -147,6 +147,7 @@ app.use((req, res, next) => {
   return next();
 });
 app.get('/style.css', (req, res) => res.sendFile(path.join(__dirname, '.vscode', 'style.css')));
+app.get('/script.js', (req, res) => res.sendFile(path.join(__dirname, '.vscode', 'script.js')));
 app.use(express.static(path.join(__dirname, 'public'), { index: false }));
 
 function requireAuth(req, res, next) {
@@ -166,14 +167,14 @@ function slugifyName(name) {
 
 function getEmojiForCategory(category) {
   const map = {
-    Electronics: 'ðŸ’»',
-    'Home & Living': 'ðŸ ',
-    'Food & Beverage': 'ðŸ›',
-    'Health & Beauty': 'âœ¨',
-    'Office Supplies': 'âœï¸',
-    Other: 'ðŸ“¦'
+    Electronics: 'Ã°Å¸â€™Â»',
+    'Home & Living': 'Ã°Å¸ÂÂ ',
+    'Food & Beverage': 'Ã°Å¸â€ºÂ',
+    'Health & Beauty': 'Ã¢Å“Â¨',
+    'Office Supplies': 'Ã¢Å“ÂÃ¯Â¸Â',
+    Other: 'Ã°Å¸â€œÂ¦'
   };
-  return map[category] || 'ðŸ“¦';
+  return map[category] || 'Ã°Å¸â€œÂ¦';
 }
 
 function getProductStatus(productId, transactionList) {
