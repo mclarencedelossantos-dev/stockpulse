@@ -110,8 +110,11 @@ dist
 *.sublime-workspace
 *.sublime-project
 
-# VS Code
+# VS Code settings (exclude IDE config, but deploy app files)
 .vscode/
+!.vscode/index.html
+!.vscode/script.js
+!.vscode/style.css
 
 # macOS
 .DS_Store
