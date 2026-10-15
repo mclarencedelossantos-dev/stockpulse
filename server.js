@@ -146,8 +146,8 @@ app.use((req, res, next) => {
   }
   return next();
 });
-app.get('/style.css', (req, res) => res.sendFile(path.join(__dirname, '.vscode', 'style.css')));
-app.get('/script.js', (req, res) => res.sendFile(path.join(__dirname, '.vscode', 'script.js')));
+app.get('/style.css', (req, res) => res.sendFile(path.join(__dirname, 'public', 'style.css')));
+app.get('/script.js', (req, res) => res.sendFile(path.join(__dirname, 'public', 'script.js')));
 app.use(express.static(path.join(__dirname, 'public'), { index: false }));
 
 function requireAuth(req, res, next) {
@@ -628,12 +628,12 @@ app.get('/', (req, res) => {
   if (!req.session || !req.session.user) {
     return res.redirect('/login');
   }
-  res.sendFile(path.join(__dirname, '.vscode', 'index.html'));
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 app.get('*', (req, res) => {
   const file = req.session && req.session.user
-    ? path.join(__dirname, '.vscode', 'index.html')
+    ? path.join(__dirname, 'public', 'index.html')
     : path.join(__dirname, 'public', 'login.html');
   res.sendFile(file);
 });

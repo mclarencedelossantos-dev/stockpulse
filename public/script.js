@@ -1,116 +1,158 @@
-const state = {
+const STORAGE_KEY = 'stockpulse-data';
+const LOW_STOCK_THRESHOLD = 5;
+
+const legacyDemoProducts = new Map([
+  ['OST-001', ['Oversized T-Shirt', 'T-Shirts']],
+  ['CP-002', ['Cargo Pants', 'Pants']],
+  ['HD-003', ['Hoodie', 'Hoodies']],
+  ['DJ-004', ['Denim Jacket', 'Jackets']],
+  ['BS-005', ['Basic Shirt', 'T-Shirts']],
+  ['SH-006', ['Shorts', 'Pants']]
+]);
+const legacyDemoTransactionIds = new Set(['TX-1001', 'TX-1002', 'TX-1003', 'TX-1004', 'TX-1005']);
+
+let state = {
   products: [],
   transactions: [],
-  dashboard: null,
   businessName: 'My Business',
-  ownerName: '',
+  ownerName: 'Mark Clarence',
   selectedProductId: null,
   activeFilter: 'All',
   searchText: '',
   salesGranularity: 'daily',
-  salesAnalytics: null,
-  analyticsMovementFilter: null,
+  analyticsMovementFilter: null
 };
-
-function escapeHtml(value) {
-  return String(value ?? '').replace(/[&<>"']/g, (character) => ({
-    '&': '&amp;',
-    '<': '&lt;',
-    '>': '&gt;',
-    '"': '&quot;',
-    "'": '&#39;',
-  })[character]);
-}
-
-function loadProfileSettings() {
-  try {
-    const saved = JSON.parse(localStorage.getItem('stockpulse-profile') || '{}');
-    if (typeof saved.businessName === 'string' && saved.businessName.trim()) state.businessName = saved.businessName.trim();
-    if (typeof saved.ownerName === 'string' && saved.ownerName.trim()) state.ownerName = saved.ownerName.trim();
-  } catch (error) {
-    localStorage.removeItem('stockpulse-profile');
-  }
-}
-
-function saveProfileSettings() {
-  localStorage.setItem('stockpulse-profile', JSON.stringify({
-    businessName: state.businessName,
-    ownerName: state.ownerName,
-  }));
-}
-
-function renderProfileSettings() {
-  const dashboardName = document.getElementById('dashboardBusinessName');
-  const ownerDisplay = document.getElementById('ownerNameDisplay');
-  const businessInput = document.getElementById('businessNameInput');
-  const ownerInput = document.getElementById('ownerNameInput');
-  if (dashboardName) dashboardName.textContent = state.businessName;
-  if (ownerDisplay && state.ownerName) ownerDisplay.textContent = state.ownerName;
-  if (businessInput) businessInput.value = state.businessName;
-  if (ownerInput) ownerInput.value = state.ownerName;
-}
-
-function saveBusinessName(event) {
-  event.preventDefault();
-  const input = document.getElementById('businessNameInput');
-  const value = input.value.trim();
-  if (!value) return input.focus();
-  state.businessName = value;
-  saveProfileSettings();
-  renderProfileSettings();
-  toast('Business name saved.');
-}
-
-function saveOwnerName(event) {
-  event.preventDefault();
-  const input = document.getElementById('ownerNameInput');
-  const value = input.value.trim();
-  if (!value) return input.focus();
-  state.ownerName = value;
-  saveProfileSettings();
-  renderProfileSettings();
-  toast('Owner name saved.');
-}
-
-function formatCurrency(value) {
-  return new Intl.NumberFormat('en-PH', {
-    style: 'currency',
-    currency: 'PHP',
-    maximumFractionDigits: 0,
-  }).format(Number(value || 0));
-}
 
 function toast(message) {
   const toastNode = document.getElementById('toast');
   if (!toastNode) return;
   toastNode.textContent = message;
   toastNode.style.display = 'block';
-  clearTimeout(toastNode.dataset.timerId);
-  toastNode.dataset.timerId = setTimeout(() => {
+  clearTimeout(toastNode.dataset.timeoutId);
+  toastNode.dataset.timeoutId = setTimeout(() => {
     toastNode.style.display = 'none';
   }, 2600);
 }
 
-function getProductById(productId) {
-  return state.products.find((product) => product.id === productId) || null;
+function loadState() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) {
+      state.products = [];
+      state.transactions = [];
+      state.selectedProductId = null;
+      return;
+    }
+
+    const parsed = JSON.parse(raw);
+    state.businessName = typeof parsed.businessName === 'string' && parsed.businessName.trim()
+      ? parsed.businessName.trim()
+      : 'My Business';
+    state.ownerName = typeof parsed.ownerName === 'string' && parsed.ownerName.trim()
+      ? parsed.ownerName.trim()
+      : 'Mark Clarence';
+    const savedProducts = Array.isArray(parsed.products) ? parsed.products : [];
+    const demoProductIds = new Set(savedProducts.filter((product) => {
+      const legacyProduct = legacyDemoProducts.get(product.id);
+      return legacyProduct && product.name === legacyProduct[0] && product.category === legacyProduct[1];
+    }).map((product) => product.id));
+    state.products = savedProducts.filter((product) => !demoProductIds.has(product.id));
+    state.transactions = (Array.isArray(parsed.transactions) ? parsed.transactions : [])
+      .filter((transaction) => !legacyDemoTransactionIds.has(transaction.id) && !demoProductIds.has(transaction.productId));
+    state.selectedProductId = parsed.selectedProductId || state.products[0]?.id || null;
+    if (!state.products.some((product) => product.id === state.selectedProductId)) {
+      state.selectedProductId = state.products[0]?.id || null;
+    }
+    if (demoProductIds.size) persistState();
+  } catch (error) {
+    state.products = [];
+    state.transactions = [];
+    state.selectedProductId = null;
+    persistState();
+  }
 }
 
-function getProductStatus(product) {
-  const sold = state.transactions
-    .filter((tx) => tx.productId === product.id && tx.type === 'Sale')
-    .reduce((sum, tx) => sum + Number(tx.quantity || 0), 0);
+function persistState() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({
+    products: state.products,
+    transactions: state.transactions,
+    businessName: state.businessName,
+    ownerName: state.ownerName,
+    selectedProductId: state.selectedProductId
+  }));
+}
 
-  if (sold >= 30) return 'Fast-moving';
-  if (sold >= 15) return 'Moderate';
-  if (sold >= 8) return 'Slow-moving';
+function renderProfileDetails() {
+  const ownerDisplay = document.getElementById('ownerNameDisplay');
+  const dashboardHeading = document.getElementById('dashboardBusinessName');
+  const businessNameInput = document.getElementById('businessNameInput');
+  const ownerNameInput = document.getElementById('ownerNameInput');
+  if (ownerDisplay) ownerDisplay.textContent = state.ownerName;
+  if (dashboardHeading) dashboardHeading.textContent = state.businessName;
+  if (businessNameInput) businessNameInput.value = state.businessName;
+  if (ownerNameInput) ownerNameInput.value = state.ownerName;
+}
+
+function saveBusinessName(event) {
+  event.preventDefault();
+  const input = document.getElementById('businessNameInput');
+  const businessName = input.value.trim();
+  if (!businessName) {
+    input.focus();
+    toast('Enter a business name.');
+    return;
+  }
+
+  state.businessName = businessName;
+  persistState();
+  renderProfileDetails();
+  toast('Business name saved.');
+}
+
+function saveOwnerName(event) {
+  event.preventDefault();
+  const input = document.getElementById('ownerNameInput');
+  const ownerName = input.value.trim();
+  if (!ownerName) {
+    input.focus();
+    toast('Enter an owner name.');
+    return;
+  }
+
+  state.ownerName = ownerName;
+  persistState();
+  renderProfileDetails();
+  toast('Owner name saved.');
+}
+
+async function logoutSession() {
+  try {
+    const response = await fetch('/api/auth/logout', { method: 'POST' });
+    if (!response.ok) throw new Error('Sign-out request failed.');
+    window.location.href = '/login';
+  } catch (error) {
+    toast('Could not sign out. Open STOCKPULSE through its app server and try again.');
+  }
+}
+
+function getProductById(id) {
+  return state.products.find((p) => p.id === id) || null;
+}
+
+function getProductMovementStatus(product) {
+  const soldQty = getSalesQuantity(product.id);
+  if (soldQty >= 30) return 'Fast-moving';
+  if (soldQty >= 15) return 'Moderate';
+  if (soldQty >= 8) return 'Slow-moving';
   return 'Non-moving';
 }
 
 function statusClass(value) {
-  if (value === 'Fast-moving') return 'fast';
-  if (value === 'Moderate') return 'moderate';
-  if (value === 'Slow-moving') return 'slow';
-  return 'low';
+  return value === 'Fast-moving' ? 'fast' : value === 'Moderate' ? 'moderate' : value === 'Slow-moving' ? 'slow' : 'low';
+}
+
+function formatCurrency(value) {
+  return new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP', maximumFractionDigits: 0 }).format(value);
 }
 
 function formatDateTime(dateString) {
@@ -118,125 +160,276 @@ function formatDateTime(dateString) {
   return `${date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}, ${date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`;
 }
 
-async function apiRequest(url, options = {}) {
-  const hasJsonBody = options.body !== undefined && options.body !== null;
-  const response = await fetch(url, {
-    headers: hasJsonBody ? { 'Content-Type': 'application/json', ...(options.headers || {}) } : (options.headers || {}),
-    ...options,
+function getSalesQuantity(productId) {
+  return state.transactions
+    .filter((tx) => tx.productId === productId && tx.type === 'Sale')
+    .reduce((sum, tx) => sum + tx.quantity, 0);
+}
+
+function getProductRevenue(productId) {
+  return state.transactions
+    .filter((tx) => tx.productId === productId && tx.type === 'Sale')
+    .reduce((sum, tx) => sum + Number(tx.amount || 0), 0);
+}
+
+function getMonthlyRevenueTotal() {
+  const today = new Date();
+  return state.transactions
+    .filter((transaction) => {
+      if (transaction.type !== 'Sale') return false;
+      const saleDate = new Date(transaction.date);
+      return !Number.isNaN(saleDate.getTime())
+        && saleDate.getFullYear() === today.getFullYear()
+        && saleDate.getMonth() === today.getMonth();
+    })
+    .reduce((sum, tx) => sum + Number(tx.amount || 0), 0);
+}
+
+function getMonthlySalesTotal() {
+  const today = new Date();
+  return state.transactions
+    .filter((transaction) => {
+      if (transaction.type !== 'Sale') return false;
+      const saleDate = new Date(transaction.date);
+      return !Number.isNaN(saleDate.getTime())
+        && saleDate.getFullYear() === today.getFullYear()
+        && saleDate.getMonth() === today.getMonth();
+    })
+    .reduce((sum, tx) => sum + tx.amount, 0);
+}
+
+function renderSalesPerformance() {
+  const chart = document.getElementById('salesChart');
+  const labels = document.getElementById('salesChartLabels');
+  const totalNode = document.getElementById('salesChartTotal');
+  const unitsNode = document.getElementById('salesChartUnits');
+  if (!chart || !labels || !totalNode || !unitsNode) return;
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const configurations = {
+    daily: { bucketCount: 30, start: new Date(today.getFullYear(), today.getMonth(), today.getDate() - 29), label: 'last 30 days' },
+    monthly: { bucketCount: 12, start: new Date(today.getFullYear(), today.getMonth() - 11, 1), label: 'last 12 months' },
+    yearly: { bucketCount: 5, start: new Date(today.getFullYear() - 4, 0, 1), label: 'last 5 years' }
+  };
+  const configuration = configurations[state.salesGranularity] || configurations.daily;
+  const buckets = Array.from({ length: configuration.bucketCount }, () => ({ revenue: 0, units: 0 }));
+
+  state.transactions.forEach((transaction) => {
+    if (transaction.type !== 'Sale') return;
+    const soldAt = new Date(transaction.date);
+    if (Number.isNaN(soldAt.getTime())) return;
+    soldAt.setHours(0, 0, 0, 0);
+    let bucketIndex;
+    if (state.salesGranularity === 'monthly') {
+      bucketIndex = (soldAt.getFullYear() - configuration.start.getFullYear()) * 12
+        + soldAt.getMonth() - configuration.start.getMonth();
+    } else if (state.salesGranularity === 'yearly') {
+      bucketIndex = soldAt.getFullYear() - configuration.start.getFullYear();
+    } else {
+      bucketIndex = Math.floor((soldAt - configuration.start) / 86400000);
+    }
+    if (bucketIndex >= 0 && bucketIndex < buckets.length) {
+      buckets[bucketIndex].revenue += Number(transaction.amount || 0);
+      buckets[bucketIndex].units += Number(transaction.quantity || 0);
+    }
   });
 
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    if (response.status === 401) {
-      window.location.href = '/login';
+  const periodRevenue = buckets.reduce((sum, bucket) => sum + bucket.revenue, 0);
+  const periodUnits = buckets.reduce((sum, bucket) => sum + bucket.units, 0);
+  totalNode.textContent = formatCurrency(periodRevenue);
+  unitsNode.textContent = periodUnits.toLocaleString();
+  document.querySelectorAll('#salesPeriods button').forEach((button) => {
+    const isActive = button.dataset.period === state.salesGranularity;
+    button.classList.toggle('active', isActive);
+    button.setAttribute('aria-pressed', String(isActive));
+  });
+
+  if (periodUnits === 0) {
+    chart.classList.add('chart-empty');
+    chart.textContent = `No sales recorded in the ${configuration.label}.`;
+    chart.setAttribute('aria-label', `No sales recorded in the ${configuration.label}`);
+    labels.innerHTML = '';
+    return;
+  }
+
+  const width = 600;
+  const top = 12;
+  const bottom = 148;
+  const left = 12;
+  const right = width - left;
+  const maxRevenue = Math.max(1, ...buckets.map((bucket) => bucket.revenue)) * 1.1;
+  const points = buckets.map((bucket, index) => {
+    const x = left + (index / (buckets.length - 1)) * (right - left);
+    const y = bottom - (bucket.revenue / maxRevenue) * (bottom - top);
+    return { x, y, ...bucket };
+  });
+  const linePoints = points.map((point) => `${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(' ');
+  const areaPath = `M${points[0].x.toFixed(1)},${bottom} ${points.map((point) => `L${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(' ')} L${points[points.length - 1].x.toFixed(1)},${bottom} Z`;
+
+  chart.classList.remove('chart-empty');
+  chart.setAttribute('aria-label', `Sales by ${state.salesGranularity} for the ${configuration.label}, total ${formatCurrency(periodRevenue)} and ${periodUnits} units`);
+  chart.innerHTML = `
+    <svg viewBox="0 0 ${width} 180" preserveAspectRatio="none" role="presentation">
+      <line class="sales-gridline" x1="${left}" y1="${top}" x2="${right}" y2="${top}" />
+      <line class="sales-gridline" x1="${left}" y1="${(top + bottom) / 2}" x2="${right}" y2="${(top + bottom) / 2}" />
+      <path class="sales-area" d="${areaPath}" />
+      <polyline class="sales-line" points="${linePoints}" />
+      ${points.filter((point) => point.units > 0).map((point) => `<circle class="sales-point" cx="${point.x.toFixed(1)}" cy="${point.y.toFixed(1)}" r="3"><title>${formatCurrency(point.revenue)} · ${point.units} units</title></circle>`).join('')}
+    </svg>
+  `;
+
+  const labelIndexes = state.salesGranularity === 'yearly'
+    ? buckets.map((_, index) => index)
+    : [...new Set([0, Math.round((buckets.length - 1) / 3), Math.round((buckets.length - 1) * 2 / 3), buckets.length - 1])];
+  labels.innerHTML = labelIndexes.map((index) => {
+    let date;
+    let dateOptions;
+    if (state.salesGranularity === 'monthly') {
+      date = new Date(configuration.start.getFullYear(), configuration.start.getMonth() + index, 1);
+      dateOptions = { month: 'short', year: '2-digit' };
+    } else if (state.salesGranularity === 'yearly') {
+      date = new Date(configuration.start.getFullYear() + index, 0, 1);
+      dateOptions = { year: 'numeric' };
+    } else {
+      date = new Date(configuration.start.getFullYear(), configuration.start.getMonth(), configuration.start.getDate() + index);
+      dateOptions = { month: 'short', day: 'numeric' };
     }
-    throw new Error(data.message || 'Request failed');
-  }
-  return data;
+    return `<span>${date.toLocaleDateString('en-US', dateOptions)}</span>`;
+  }).join('');
 }
 
-async function loadCurrentUser() {
-  try {
-    const response = await apiRequest('/api/auth/me');
-    const user = response.user || {};
-    const userName = document.getElementById('userName') || document.getElementById('ownerNameDisplay');
-    const userRole = document.getElementById('userRole');
-    const menuUserName = document.getElementById('menuUserName');
-    const userEmail = document.getElementById('userEmail');
-    const displayName = state.ownerName || user.name || user.username || 'User';
-    const displayRole = user.role === 'admin' ? 'Administrator' : 'Manager';
-    if (userName) userName.textContent = displayName;
-    if (userRole) userRole.textContent = displayRole;
-    if (menuUserName) menuUserName.textContent = displayName;
-    if (userEmail) userEmail.textContent = user.email || user.username || '';
-    const menuUserRole = document.getElementById('menuUserRole');
-    if (menuUserRole) menuUserRole.textContent = displayRole;
-    if (!state.ownerName) state.ownerName = displayName;
-    renderProfileSettings();
-  } catch (error) {
-    window.location.href = '/login';
+function computeDashboardMetrics() {
+  const totalProducts = state.products.length;
+  const totalStock = state.products.reduce((sum, product) => sum + Number(product.stock || 0), 0);
+  const lowStockCount = state.products.filter((p) => Number(p.stock) <= LOW_STOCK_THRESHOLD).length;
+  const salesTotal = getMonthlySalesTotal();
+
+  document.getElementById('totalProducts').textContent = String(totalProducts);
+  document.getElementById('totalStock').textContent = totalStock.toLocaleString();
+  document.getElementById('salesTotal').textContent = formatCurrency(salesTotal);
+  document.getElementById('lowStockCount').textContent = String(lowStockCount);
+  document.getElementById('donutTotal').textContent = String(totalProducts);
+  renderSalesPerformance();
+
+  const movement = { 'Fast-moving': 0, 'Moderate': 0, 'Slow-moving': 0, 'Non-moving': 0 };
+  state.products.forEach((product) => {
+    const status = getProductMovementStatus(product);
+    movement[status] += 1;
+  });
+
+  const donut = document.querySelector('.donut');
+  if (donut) {
+    const movementColors = ['#16a879', '#1677e8', '#f2ad2e', '#e64d68'];
+    let movementStart = 0;
+    const movementStops = Object.values(movement).map((count, index) => {
+      const movementEnd = movementStart + (count / Math.max(1, totalProducts)) * 100;
+      const stop = `${movementColors[index]} ${movementStart}% ${movementEnd}%`;
+      movementStart = movementEnd;
+      return stop;
+    });
+    donut.style.background = totalProducts ? `conic-gradient(${movementStops.join(', ')})` : '#e8eef5';
   }
-}
 
-async function logoutUser() {
-  try {
-    await apiRequest('/api/auth/logout', { method: 'POST', body: JSON.stringify({}) });
-    window.location.href = '/login';
-  } catch (error) {
-    toast(error.message || 'Unable to log out.');
-  }
-}
-
-async function loadDashboard() {
-  const dashboard = await apiRequest('/api/dashboard');
-  state.dashboard = dashboard;
-  document.getElementById('alertBadge').textContent = String(dashboard.lowStockCount || 0);
-  document.getElementById('alertNavDot').hidden = Number(dashboard.lowStockCount || 0) === 0;
-  document.getElementById('donutTotal').textContent = String(dashboard.totalProducts || 0);
-
-  const stats = [
-    { label: 'Total Products', value: dashboard.totalProducts || 0, icon: '♧', type: 'blue', sub: 'current catalog' },
-    { label: 'Total Stock Quantity', value: (dashboard.totalStock || 0).toLocaleString(), icon: '⬡', type: 'green', sub: 'in warehouse' },
-    { label: 'Total Sales (This Month)', value: formatCurrency(dashboard.salesTotal || 0), icon: '🛒', type: 'purple', sub: 'recorded sales' },
-    { label: 'Low Stock Items', value: dashboard.lowStockCount || 0, icon: '⚠', type: 'red', sub: 'needs attention' },
-  ];
-
-  document.getElementById('dashboardStats').innerHTML = stats.map((item) => `
-    <div class="stat">
-      <div class="stat-icon ${item.type}">${item.icon}</div>
-      <div>
-        <label>${item.label}</label>
-        <h2>${item.value}</h2>
-        <div class="trend">↑ live</div>
-        <div class="sub">${item.sub}</div>
-      </div>
-    </div>
-  `).join('');
-
-  const movement = dashboard.movement || { 'Fast-moving': 0, Moderate: 0, 'Slow-moving': 0, 'Non-moving': 0 };
-  document.getElementById('movementLegend').innerHTML = [
-    { label: 'Fast-moving', color: '#16a879', count: movement['Fast-moving'] },
-    { label: 'Moderate', color: '#1677e8', count: movement.Moderate },
-    { label: 'Slow-moving', color: '#f2ad2e', count: movement['Slow-moving'] },
-    { label: 'Non-moving', color: '#e64d68', count: movement['Non-moving'] },
+  const totalMovement = Math.max(1, totalProducts);
+  const legendHtml = [
+    { label: 'Fast-moving', color: '#16a879', count: movement['Fast-moving'], value: ((movement['Fast-moving'] / totalMovement) * 100).toFixed(0) },
+    { label: 'Moderate', color: '#1677e8', count: movement['Moderate'], value: ((movement['Moderate'] / totalMovement) * 100).toFixed(0) },
+    { label: 'Slow-moving', color: '#f2ad2e', count: movement['Slow-moving'], value: ((movement['Slow-moving'] / totalMovement) * 100).toFixed(0) },
+    { label: 'Non-moving', color: '#e64d68', count: movement['Non-moving'], value: ((movement['Non-moving'] / totalMovement) * 100).toFixed(0) }
   ].map((item) => `
-      <div>
+    <div>
       <i class="dot" style="background:${item.color}"></i>${item.label} <b>${item.count}</b>
     </div>
   `).join('');
+  document.getElementById('movementLegend').innerHTML = legendHtml;
 
-  document.getElementById('topProducts').innerHTML = (dashboard.topProducts || []).map((product, index) => `
-    <div class="product-mini">
-      <b class="rank">${index + 1}</b>
-      <span class="mini-img">${escapeHtml(product.emoji || '📦')}</span>
-      <div>
-        <strong>${escapeHtml(product.name)}</strong>
-        <small>${product.sold} sold</small>
-      </div>
-    </div>
-  `).join('') || '<p class="empty-note">Products will appear here after you add them and record sales.</p>';
-
-  const alerts = dashboard.alerts || [];
-  const alertHtml = alerts.length
-    ? alerts.map((item) => `
-      <div class="alert">
-        <span class="alert-icon" style="color:var(--red)">⚠</span>
+  const topProducts = [...state.products]
+    .sort((a, b) => getSalesQuantity(b.id) - getSalesQuantity(a.id) || getProductRevenue(b.id) - getProductRevenue(a.id))
+    .slice(0, 5)
+    .map((product, index) => {
+      const revenue = getProductRevenue(product.id);
+      return `
+      <div class="product-mini">
+        <b class="rank">${index + 1}</b>
+        <span class="mini-img">${product.emoji || '📦'}</span>
         <div>
-          <strong>${escapeHtml(item.message)}</strong>
-          <small>Only ${item.stock} left in inventory.</small>
+          <strong>${product.name}</strong>
+          <div style="display:flex;gap:8px">
+            <small>${getSalesQuantity(product.id)} sold</small>
+            <small>${formatCurrency(revenue)}</small>
+          </div>
         </div>
       </div>
-    `).join('')
+      `;
+    }).join('');
+  document.getElementById('topProducts').innerHTML = topProducts || '<p>No products added yet.</p>';
+
+  const lowStockProducts = state.products.filter((product) => Number(product.stock) <= LOW_STOCK_THRESHOLD);
+  const alerts = lowStockProducts.slice(0, 4);
+  const alertHtml = alerts.length
+    ? alerts.map((product) => `
+        <div class="alert">
+          <span class="alert-icon" style="color:var(--red)">⚠</span>
+          <div>
+            <strong>${product.name} is running low in stock.</strong>
+            <small>Only ${product.stock} left in inventory.</small>
+          </div>
+        </div>
+      `).join('')
     : '<div class="alert"><span class="alert-icon" style="color:var(--green)">✓</span><div><strong>No low-stock alerts.</strong><small>Stock levels are healthy.</small></div></div>';
 
-  document.getElementById('alertList').innerHTML = alertHtml;
-  document.getElementById('alertsPageList').innerHTML = alertHtml;
+  const emptyAlerts = '<div class="alert"><span class="alert-icon" style="color:var(--muted)">·</span><div><strong>No products to monitor yet.</strong><small>Add products to see stock alerts.</small></div></div>';
+  document.getElementById('alertList').innerHTML = state.products.length ? alertHtml : emptyAlerts;
+  document.getElementById('alertsPageList').innerHTML = state.products.length ? alertHtml : emptyAlerts;
+  document.getElementById('alertBadge').textContent = String(lowStockProducts.length);
+  document.getElementById('alertNavDot').hidden = lowStockProducts.length === 0;
+
+  const salesByProduct = new Map();
+  let totalUnitsSold = 0;
+  let totalRevenue = 0;
+  state.transactions.forEach((transaction) => {
+    if (transaction.type !== 'Sale') return;
+    const quantity = Number(transaction.quantity || 0);
+    const amount = Number(transaction.amount || 0);
+    totalUnitsSold += quantity;
+    totalRevenue += amount;
+    salesByProduct.set(transaction.productId, (salesByProduct.get(transaction.productId) || 0) + quantity);
+  });
+  document.getElementById('analyticsTotalUnits').textContent = totalUnitsSold.toLocaleString();
+  const analyticsTotalRevenue = document.getElementById('analyticsTotalRevenue');
+  if (analyticsTotalRevenue) analyticsTotalRevenue.textContent = formatCurrency(totalRevenue);
+  const productSales = [...state.products]
+    .map((product) => ({
+      ...product,
+      unitsSold: salesByProduct.get(product.id) || 0,
+      revenue: getProductRevenue(product.id),
+      movementStatus: getProductMovementStatus(product)
+    }))
+    .sort((a, b) => b.unitsSold - a.unitsSold || a.name.localeCompare(b.name));
+  const visibleProductSales = state.analyticsMovementFilter
+    ? productSales.filter((product) => product.movementStatus === state.analyticsMovementFilter)
+    : productSales;
+  const productHeading = document.getElementById('analyticsProductHeading');
+  if (productHeading) {
+    productHeading.textContent = state.analyticsMovementFilter
+      ? `${state.analyticsMovementFilter} products`
+      : 'Units sold by product';
+  }
+  document.getElementById('analyticsSalesRows').innerHTML = visibleProductSales.map((product) => `
+    <tr>
+      <td>${product.name}</td>
+      <td>${product.category}</td>
+      <td>${product.unitsSold.toLocaleString()}</td>
+      <td>${formatCurrency(product.revenue)}</td>
+    </tr>
+  `).join('') || `<tr><td colspan="4">${state.analyticsMovementFilter ? `No ${state.analyticsMovementFilter.toLowerCase()} products.` : 'Add products to see sales quantities here.'}</td></tr>`;
 
   const analyticsStats = [
     { label: 'Fast-moving', value: movement['Fast-moving'], className: 'fast' },
-    { label: 'Moderate', value: movement.Moderate, className: 'moderate' },
+    { label: 'Moderate', value: movement['Moderate'], className: 'moderate' },
     { label: 'Slow-moving', value: movement['Slow-moving'], className: 'slow' },
-    { label: 'Non-moving', value: movement['Non-moving'], className: 'low' },
+    { label: 'Non-moving', value: movement['Non-moving'], className: 'low' }
   ];
 
   document.getElementById('analyticsStats').innerHTML = analyticsStats.map((item) => `
@@ -244,197 +437,280 @@ async function loadDashboard() {
       <div>
         <label>${item.label}</label>
         <h2>${item.value}</h2>
-        <span class="pill ${item.className}">${dashboard.totalProducts ? Math.round((item.value / dashboard.totalProducts) * 100) : 0}%</span>
+        <span class="pill ${item.className}">${item.value ? Math.round((item.value / totalMovement) * 100) : 0}%</span>
       </div>
     </button>
   `).join('');
 }
 
-function renderSalesAnalytics() {
-  const report = state.salesAnalytics;
-  if (!report) return;
+function getFilteredProducts() {
+  const search = state.searchText.trim().toLowerCase();
 
-  const chart = document.getElementById('salesChart');
-  const chartLabels = document.getElementById('salesChartLabels');
-  document.getElementById('salesChartTotal').textContent = formatCurrency(report.totalRevenue);
-  document.getElementById('salesChartUnits').textContent = Number(report.totalUnits || 0).toLocaleString();
-  document.getElementById('analyticsTotalUnits').textContent = Number(report.allTimeUnits || 0).toLocaleString();
-
-  document.querySelectorAll('#salesPeriods button').forEach((button) => {
-    const isActive = button.dataset.period === state.salesGranularity;
-    button.classList.toggle('active', isActive);
-    button.setAttribute('aria-pressed', String(isActive));
+  return state.products.filter((product) => {
+    const matchesFilter = state.activeFilter === 'All' || product.category === state.activeFilter;
+    const matchesSearch = !search || `${product.name} ${product.id} ${product.category}`.toLowerCase().includes(search);
+    return matchesFilter && matchesSearch;
   });
-  document.querySelectorAll('#analyticsStats button[data-movement]').forEach((button) => {
-    button.setAttribute('aria-pressed', String(button.dataset.movement === state.analyticsMovementFilter));
-  });
-
-  if (!report.totalUnits) {
-    chart.classList.add('chart-empty');
-    chart.textContent = `No sales recorded in the ${report.periodLabel}.`;
-    chart.setAttribute('aria-label', `No sales recorded in the ${report.periodLabel}`);
-    chartLabels.innerHTML = '';
-  } else {
-    const buckets = report.buckets || [];
-    const width = 600;
-    const top = 12;
-    const bottom = 148;
-    const left = 12;
-    const right = width - left;
-    const maxRevenue = Math.max(1, ...buckets.map((bucket) => Number(bucket.revenue || 0))) * 1.1;
-    const points = buckets.map((bucket, index) => ({
-      ...bucket,
-      x: left + (index / Math.max(1, buckets.length - 1)) * (right - left),
-      y: bottom - (Number(bucket.revenue || 0) / maxRevenue) * (bottom - top),
-    }));
-    const linePoints = points.map((point) => `${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(' ');
-    const areaPath = `M${points[0].x.toFixed(1)},${bottom} ${points.map((point) => `L${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(' ')} L${points.at(-1).x.toFixed(1)},${bottom} Z`;
-    chart.classList.remove('chart-empty');
-    chart.setAttribute('aria-label', `Sales by ${report.granularity}, ${formatCurrency(report.totalRevenue)} across ${report.totalUnits} units`);
-    chart.innerHTML = `
-      <svg viewBox="0 0 ${width} 180" preserveAspectRatio="none" role="presentation">
-        <line class="sales-gridline" x1="${left}" y1="${top}" x2="${right}" y2="${top}" />
-        <line class="sales-gridline" x1="${left}" y1="${(top + bottom) / 2}" x2="${right}" y2="${(top + bottom) / 2}" />
-        <path class="sales-area" d="${areaPath}" />
-        <polyline class="sales-line" points="${linePoints}" />
-        ${points.filter((point) => point.units > 0).map((point) => `<circle class="sales-point" cx="${point.x.toFixed(1)}" cy="${point.y.toFixed(1)}" r="3"><title>${formatCurrency(point.revenue)} · ${point.units} units</title></circle>`).join('')}
-      </svg>
-    `;
-    const labelIndexes = report.granularity === 'yearly'
-      ? buckets.map((_, index) => index)
-      : [...new Set([0, Math.round((buckets.length - 1) / 3), Math.round((buckets.length - 1) * 2 / 3), buckets.length - 1])];
-    chartLabels.innerHTML = labelIndexes.map((index) => `<span>${escapeHtml(buckets[index].label)}</span>`).join('');
-  }
-
-  const products = report.products || [];
-  const visibleProducts = state.analyticsMovementFilter
-    ? products.filter((product) => product.movementStatus === state.analyticsMovementFilter)
-    : products;
-  document.getElementById('analyticsProductHeading').textContent = state.analyticsMovementFilter
-    ? `${state.analyticsMovementFilter} products`
-    : 'Units sold by product';
-  document.getElementById('analyticsSalesRows').innerHTML = visibleProducts.map((product) => `
-    <tr><td>${escapeHtml(product.name)}</td><td>${escapeHtml(product.category)}</td><td>${Number(product.unitsSold || 0).toLocaleString()}</td></tr>
-  `).join('') || `<tr><td colspan="3">${state.analyticsMovementFilter ? `No ${escapeHtml(state.analyticsMovementFilter.toLowerCase())} products.` : 'Add products to see sales quantities here.'}</td></tr>`;
-}
-
-async function loadSalesAnalytics(granularity = state.salesGranularity) {
-  state.salesGranularity = granularity;
-  state.salesAnalytics = await apiRequest(`/api/analytics/sales?granularity=${encodeURIComponent(granularity)}`);
-  renderSalesAnalytics();
-}
-
-async function loadProducts() {
-  state.products = await apiRequest('/api/products');
-  if (!state.selectedProductId && state.products.length) {
-    state.selectedProductId = state.products[0].id;
-  }
-  renderInventory();
-  renderDetails();
-}
-
-async function loadTransactions() {
-  state.transactions = await apiRequest('/api/transactions');
-  renderTransactions();
-  renderInventory();
-  renderDetails();
-}
-
-async function refreshAll() {
-  try {
-    await Promise.all([loadDashboard(), loadProducts(), loadTransactions(), loadSalesAnalytics()]);
-  } catch (error) {
-    toast(error.message || 'Unable to load data.');
-  }
 }
 
 function renderInventory() {
-  const filtered = state.products.filter((product) => {
-    const matchesFilter = state.activeFilter === 'All' || product.category === state.activeFilter;
-    const searchValue = state.searchText.trim().toLowerCase();
-    const matchesSearch = !searchValue || `${product.name} ${product.id} ${product.category}`.toLowerCase().includes(searchValue);
-    return matchesFilter && matchesSearch;
-  });
-
-  const productRows = filtered.map((product) => {
-    const status = getProductStatus(product);
-    return `
-      <tr data-product-id="${escapeHtml(product.id)}">
-        <td><b>${escapeHtml(product.name)}</b><div class="muted">${escapeHtml(product.id)}</div></td>
-        <td>${escapeHtml(product.category)}</td>
-        <td>${formatCurrency(product.price)}</td>
+  const filtered = getFilteredProducts();
+  const rows = filtered.map((product) => {
+    const movementStatus = getProductMovementStatus(product);
+    const productRow = `
+      <tr onclick="selectProduct('${product.id}')">
+        <td><div class="item-img">${product.emoji || '📦'}</div></td>
+        <td><b>${product.name}</b><div class="muted">${product.id}</div></td>
+        <td>${product.category}</td>
+        <td>
+          ${formatCurrency(product.price)}
+        </td>
         <td>${product.stock}</td>
-        <td><span class="pill ${statusClass(status)}">${status}</span></td>
-        <td><button type="button" class="text-button" data-select-product="${escapeHtml(product.id)}">View</button></td>
+        <td><span class="pill ${statusClass(movementStatus)}">${movementStatus}</span></td>
+        <td><button type="button" onclick="event.stopPropagation(); selectProduct('${product.id}')" style="background:none">•••</button></td>
       </tr>
     `;
+    return productRow;
   }).join('');
-  const emptyMessage = state.products.length === 0
-    ? '<div class="table-empty"><strong>Your inventory is empty</strong><p>Add a product from the Products page to start tracking stock.</p></div>'
-    : '<div class="table-empty compact"><strong>No products found</strong><p>Try another search or category.</p></div>';
-  document.getElementById('inventoryRows').innerHTML = productRows || `<tr><td colspan="6">${emptyMessage}</td></tr>`;
 
+  const emptyMessage = state.products.length
+    ? '<tr><td colspan="7">No products match your search or category.</td></tr>'
+    : '<tr><td colspan="7"><div class="inventory-empty"><strong>Your inventory is empty</strong><p>Add products from the Products page to start tracking stock.</p></div></td></tr>';
+  document.getElementById('inventoryRows').innerHTML = rows || emptyMessage;
   document.getElementById('showing').textContent = `Showing ${filtered.length} product${filtered.length === 1 ? '' : 's'}`;
 
-  const filterButtons = document.querySelectorAll('#filters button');
-  filterButtons.forEach((button) => {
-    button.classList.toggle('active', button.dataset.filter === state.activeFilter);
-  });
-
   document.getElementById('productsList').innerHTML = state.products.map((product) => `
-    <div class="product-list-row"><div><strong>${escapeHtml(product.name)}</strong><small>${escapeHtml(product.id)} · ${escapeHtml(product.category)}</small></div><span>${formatCurrency(product.price)}</span><span>${Number(product.stock || 0).toLocaleString()} in stock</span></div>
-  `).join('') || '<div class="empty-state"><strong>No products yet</strong><p>Add a product to build your catalog.</p><button class="primary" type="button" onclick="openProductModal()">Add product</button></div>';
+    <div class="product-item" onclick="selectProduct('${product.id}')">
+      <span style="font-size:18px;margin-right:6px">${product.emoji || '📦'}</span>
+      <b>${product.name}</b> — <span class="muted">${product.id}</span> — ${formatCurrency(product.price)} — <b>${product.stock}</b> in stock
+    </div>
+  `).join('') || '<div class="inventory-empty"><strong>No products yet</strong><p>Your catalog will appear here when you add products.</p><button class="primary" type="button" onclick="openProductModal()">Add product</button></div>';
   document.getElementById('productsAddButton').hidden = state.products.length === 0;
 
-  const invAlt = document.getElementById('inventoryAlt');
-  if (invAlt) {
-    invAlt.innerHTML = `<p>${state.products.length} products currently loaded.</p>`;
-  }
+  const filters = document.querySelectorAll('#filters button');
+  filters.forEach((button) => button.classList.toggle('active', button.dataset.filter === state.activeFilter));
+}
+
+function selectProduct(productId) {
+  state.selectedProductId = productId;
+  persistState();
+  renderDetails();
 }
 
 function renderDetails() {
   const product = getProductById(state.selectedProductId) || state.products[0];
-  const details = document.getElementById('productDetails');
-  if (!details) return;
-  document.getElementById('editProductButton').hidden = !product;
-  document.getElementById('deleteProductButton').hidden = !product;
   if (!product) {
-    details.innerHTML = '<div class="detail-empty"><strong>No product selected</strong><p>Select a product to view its stock details.</p></div>';
+    document.getElementById('productDetails').innerHTML = '<div class="inventory-empty"><strong>No product selected</strong><p>Product details will appear here when you add products from the Products page.</p></div>';
     return;
   }
 
-  const sold = state.transactions.filter((tx) => tx.productId === product.id && tx.type === 'Sale').reduce((sum, tx) => sum + Number(tx.quantity || 0), 0);
-  const status = getProductStatus(product);
-
-  details.innerHTML = `
+  const movementStatus = getProductMovementStatus(product);
+  const salesCount = getSalesQuantity(product.id);
+  document.getElementById('productDetails').innerHTML = `
     <div class="detail-top">
       <div style="flex:1">
-        <div class="big-product">${escapeHtml(product.emoji || '📦')}</div>
+        <div class="big-product">${product.emoji || '📦'}</div>
       </div>
       <div style="flex:1.1">
-        <div class="detail-name">${escapeHtml(product.name)}</div>
-        <div class="muted">${escapeHtml(product.id)}</div>
-        <span class="pill ${statusClass(status)}">${status}</span>
+        <div class="detail-name">${product.name}</div>
+        <div class="muted">${product.id}</div>
+        <span class="pill ${statusClass(movementStatus)}">${movementStatus}</span>
         <div class="price">${formatCurrency(product.price)}</div>
         <div class="detail-meta">
-          Category: ${escapeHtml(product.category)}<br>
+          Category: ${product.category}<br>
           Unit price: ${formatCurrency(product.price)}<br>
-          Stock on hand: ${Number(product.stock || 0).toLocaleString()}<br>
-          Sold: ${sold} units
+          Stock on hand: ${product.stock}<br>
+          Sold: ${salesCount} units
         </div>
       </div>
     </div>
-    <div class="detail-actions card-actions"><button type="button" class="secondary-btn" onclick="openTransactionModal('${escapeHtml(product.id)}')">New Transaction</button><button type="button" class="primary" onclick="editSelected()">Edit Product</button></div>
+    <div class="detail-actions card-actions">
+      <button type="button" class="secondary-btn" onclick="openTransactionModal(productId='${product.id}')">New Transaction</button>
+      <button type="button" class="primary" onclick="editSelected()">Edit Product</button>
+    </div>
   `;
 }
 
+function openProductModal(productId = null) {
+  const form = document.getElementById('productForm');
+  const modal = document.getElementById('productModal');
+  const modalTitle = document.getElementById('productModalTitle');
+  form.reset();
+
+  if (productId) {
+    const product = getProductById(productId);
+    if (!product) return;
+
+    modalTitle.textContent = 'Edit Product';
+    form.name.value = product.name;
+    form.elements.namedItem('id').value = product.id;
+    form.category.value = product.category;
+    form.price.value = product.price;
+    form.stock.value = product.stock;
+    form.dataset.editId = productId;
+  } else {
+    modalTitle.textContent = 'Add Product';
+    form.dataset.editId = '';
+    form.elements.namedItem('id').value = `NEW-${String(state.products.length + 1).padStart(3, '0')}`;
+  }
+
+  modal.classList.remove('hidden');
+}
+
+function closeModal(modalId) {
+  document.getElementById(modalId).classList.add('hidden');
+}
+
+function openTransactionModal(productId = null) {
+  const select = document.getElementById('transactionProductSelect');
+  if (!state.products.length) {
+    toast('Add a product before recording a transaction.');
+    return;
+  }
+  select.innerHTML = state.products.map((product) => `
+    <option value="${product.id}" ${productId === product.id ? 'selected' : ''}>${product.name}</option>
+  `).join('');
+  document.getElementById('transactionModal').classList.remove('hidden');
+}
+
+function addProductFromForm(event) {
+  event.preventDefault();
+  const form = event.target;
+  const data = new FormData(form);
+  const name = (data.get('name') || '').trim();
+  const productId = (data.get('id') || '').trim();
+  const category = data.get('category') || 'Other';
+  const price = Number(data.get('price')) || 0;
+  const stock = Number(data.get('stock')) || 0;
+
+  if (!name || !productId) {
+    toast('Please provide the required product information.');
+    return;
+  }
+
+  const isEdit = Boolean(form.dataset.editId);
+  if (isEdit) {
+    const existing = getProductById(form.dataset.editId);
+    if (!existing) return;
+
+    existing.name = name;
+    existing.id = productId;
+    existing.category = category;
+    existing.price = price;
+    existing.stock = stock;
+    state.selectedProductId = existing.id;
+    toast('Product updated successfully.');
+  } else {
+    const newProduct = {
+      id: productId,
+      name,
+      category,
+      emoji: '📦',
+      price,
+      stock
+    };
+    state.products.push(newProduct);
+    state.selectedProductId = productId;
+    toast('Product added successfully.');
+  }
+
+  persistState();
+  renderInventory();
+  renderDetails();
+  computeDashboardMetrics();
+  closeModal('productModal');
+}
+
+function editSelected() {
+  if (!state.selectedProductId) {
+    toast('Please select a product first.');
+    return;
+  }
+  openProductModal(state.selectedProductId);
+}
+
+function deleteSelected() {
+  if (!state.selectedProductId) {
+    toast('Please select a product first.');
+    return;
+  }
+  const product = getProductById(state.selectedProductId);
+  if (!product) return;
+
+  const confirmDelete = window.confirm(`Delete ${product.name}?`);
+  if (!confirmDelete) return;
+
+  state.products = state.products.filter((p) => p.id !== product.id);
+  state.transactions = state.transactions.filter((tx) => tx.productId !== product.id);
+  state.selectedProductId = state.products[0]?.id || null;
+  persistState();
+  renderInventory();
+  renderDetails();
+  computeDashboardMetrics();
+  toast('Product deleted.');
+}
+
+function recordTransaction(event) {
+  event.preventDefault();
+  const form = event.target;
+  const formData = new FormData(form);
+  const productId = formData.get('productId') || '';
+  const type = formData.get('type') || 'Sale';
+  const quantity = Number(formData.get('quantity')) || 0;
+
+  if (!productId || !quantity) {
+    toast('Please complete transaction details.');
+    return;
+  }
+
+  const product = getProductById(productId);
+  if (!product) {
+    toast('Selected product not found.');
+    return;
+  }
+
+  if (type === 'Sale' && product.stock < quantity) {
+    toast('Not enough stock for this sale.');
+    return;
+  }
+
+  const tx = {
+    id: `TX-${Date.now()}`,
+    productId: product.id,
+    productName: product.name,
+    type,
+    quantity,
+    amount: type === 'Sale' ? product.price * quantity : 0,
+    date: new Date().toISOString()
+  };
+
+  state.transactions.unshift(tx);
+
+  if (type === 'Sale') {
+    product.stock = Math.max(0, Number(product.stock) - quantity);
+  } else if (type === 'Stock In') {
+    product.stock = Number(product.stock) + quantity;
+  } else if (type === 'Return') {
+    product.stock = Math.max(0, Number(product.stock) + quantity);
+  }
+
+  persistState();
+  renderInventory();
+  renderDetails();
+  computeDashboardMetrics();
+  renderTransactions();
+  closeModal('transactionModal');
+  form.reset();
+  toast(`${type} recorded successfully.`);
+}
+
 function renderTransactions() {
-  const filter = document.getElementById('transactionTypeFilter')?.value || 'All';
-  const visible = [...state.transactions]
-    .filter((tx) => filter === 'All' || tx.type === filter)
+  const transactionType = document.getElementById('transactionTypeFilter')?.value || 'All';
+  const txs = [...state.transactions]
+    .filter((tx) => transactionType === 'All' || tx.type === transactionType)
     .slice(0, 8);
 
-  document.getElementById('recentTransactionsBody').innerHTML = visible.map((tx) => `
+  document.getElementById('recentTransactionsBody').innerHTML = txs.map((tx) => `
     <tr>
       <td>${formatDateTime(tx.date)}</td>
       <td>${tx.productName}</td>
@@ -442,9 +718,9 @@ function renderTransactions() {
       <td>${tx.type === 'Sale' ? formatCurrency(tx.amount) : '₱ 0'}</td>
       <td><span class="pill ${tx.type === 'Sale' ? 'fast' : tx.type === 'Stock In' ? 'moderate' : 'low'}">${tx.type}</span></td>
     </tr>
-  `).join('');
+  `).join('') || '<tr><td colspan="5">No transactions yet.</td></tr>';
 
-  document.getElementById('transactionsList').innerHTML = visible.map((tx) => `
+  document.getElementById('transactionsList').innerHTML = txs.map((tx) => `
     <div class="transaction-card">
       <div>
         <strong>${tx.productName}</strong>
@@ -455,155 +731,19 @@ function renderTransactions() {
         <span class="pill ${tx.type === 'Sale' ? 'fast' : tx.type === 'Stock In' ? 'moderate' : 'low'}">${tx.type}</span>
       </div>
     </div>
-  `).join('') || '<div class="empty-state"><strong>No transactions yet</strong><p>Transactions will appear here after you record a sale or stock movement.</p></div>';
+  `).join('') || '<p>No transactions yet.</p>';
 }
 
-function selectProduct(productId) {
-  state.selectedProductId = productId;
-  renderDetails();
-}
-
-function showPage(pageId) {
-  document.querySelectorAll('.page').forEach((page) => page.classList.toggle('active', page.id === pageId));
-  document.querySelectorAll('.nav button').forEach((button) => button.classList.toggle('active', button.dataset.page === pageId));
+function showPage(id) {
+  document.querySelectorAll('.page').forEach((page) => page.classList.toggle('active', page.id === id));
+  document.querySelectorAll('.nav button').forEach((button) => button.classList.toggle('active', button.dataset.page === id));
   window.scrollTo(0, 0);
 }
 
-function closeModal(modalId) {
-  document.getElementById(modalId).classList.add('hidden');
-}
-
-function openProductModal(productId = null) {
-  const form = document.getElementById('productForm');
-  const modal = document.getElementById('productModal');
-  const title = document.getElementById('productModalTitle');
-  form.reset();
-
-  if (productId) {
-    const product = getProductById(productId);
-    if (!product) return;
-    title.textContent = 'Edit Product';
-    form.elements.namedItem('name').value = product.name;
-    productIdInput(form).value = product.id;
-    form.elements.namedItem('category').value = product.category;
-    form.elements.namedItem('price').value = product.price;
-    form.elements.namedItem('stock').value = product.stock;
-    form.dataset.productId = product.id;
-  } else {
-    title.textContent = 'Add Product';
-    form.dataset.productId = '';
-    productIdInput(form).value = `NEW-${String(state.products.length + 1).padStart(3, '0')}`;
-  }
-
-  modal.classList.remove('hidden');
-}
-
-function productIdInput(form) {
-  return form.elements.namedItem('id') || form.elements.namedItem('productId');
-}
-
-function openTransactionModal(productId = null) {
-  const select = document.getElementById('transactionProductSelect');
-  select.innerHTML = state.products.map((product) => `
-    <option value="${product.id}" ${productId === product.id ? 'selected' : ''}>${product.name}</option>
-  `).join('');
-  document.getElementById('transactionModal').classList.remove('hidden');
-}
-
-async function submitProduct(event) {
-  event.preventDefault();
-  const form = event.target;
-  const productId = form.dataset.productId || productIdInput(form).value;
-  const payload = {
-    id: productIdInput(form).value,
-    name: form.elements.namedItem('name').value,
-    category: form.elements.namedItem('category').value,
-    price: Number(form.elements.namedItem('price').value),
-    stock: Number(form.elements.namedItem('stock').value),
-    sizes: [],
-    colors: [],
-  };
-
-  try {
-    if (form.dataset.productId) {
-      await apiRequest(`/api/products/${encodeURIComponent(productId)}`, {
-        method: 'PUT',
-        body: JSON.stringify(payload),
-      });
-      toast('Product updated.');
-    } else {
-      await apiRequest('/api/products', {
-        method: 'POST',
-        body: JSON.stringify(payload),
-      });
-      toast('Product added.');
-    }
-
-    form.reset();
-    closeModal('productModal');
-    await refreshAll();
-  } catch (error) {
-    toast(error.message || 'Unable to save product.');
-  }
-}
-
-async function submitTransaction(event) {
-  event.preventDefault();
-  const form = event.target;
-  const payload = {
-    productId: form.elements.namedItem('productId').value,
-    type: form.elements.namedItem('type').value,
-    quantity: Number(form.elements.namedItem('quantity').value),
-  };
-
-  try {
-    await apiRequest('/api/transactions', {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    });
-    toast('Transaction saved.');
-    form.reset();
-    closeModal('transactionModal');
-    await refreshAll();
-  } catch (error) {
-    toast(error.message || 'Unable to save transaction.');
-  }
-}
-
-async function editSelected() {
-  if (!state.selectedProductId) {
-    toast('Select a product first.');
-    return;
-  }
-  openProductModal(state.selectedProductId);
-}
-
-async function deleteSelected() {
-  if (!state.selectedProductId) {
-    toast('Select a product first.');
-    return;
-  }
-  const product = getProductById(state.selectedProductId);
-  if (!product) return;
-
-  const confirmDelete = window.confirm(`Delete ${product.name}?`);
-  if (!confirmDelete) return;
-
-  try {
-    await apiRequest(`/api/products/${encodeURIComponent(product.id)}`, { method: 'DELETE' });
-    toast('Product deleted.');
-    state.selectedProductId = null;
-    await refreshAll();
-  } catch (error) {
-    toast(error.message || 'Unable to delete product.');
-  }
-}
-
-function bindEvents() {
+function initEvents() {
   document.getElementById('nav').addEventListener('click', (event) => {
     const button = event.target.closest('button[data-page]');
-    if (!button) return;
-    showPage(button.dataset.page);
+    if (button) showPage(button.dataset.page);
   });
 
   document.getElementById('filters').addEventListener('click', (event) => {
@@ -613,63 +753,34 @@ function bindEvents() {
     renderInventory();
   });
 
-  document.getElementById('search').addEventListener('input', (event) => {
-    state.searchText = event.target.value;
-    renderInventory();
-  });
-
-  document.getElementById('inventoryRows').addEventListener('click', (event) => {
-    const button = event.target.closest('button[data-select-product]');
-    const row = event.target.closest('tr[data-product-id]');
-    const productId = button ? button.dataset.selectProduct : row && row.dataset.productId;
-    if (productId) selectProduct(productId);
-  });
-
   document.getElementById('salesPeriods').addEventListener('click', (event) => {
     const button = event.target.closest('button[data-period]');
-    if (button && button.dataset.period !== state.salesGranularity) {
-      loadSalesAnalytics(button.dataset.period).catch((error) => toast(error.message || 'Unable to load sales analytics.'));
-    }
+    if (!button) return;
+    state.salesGranularity = button.dataset.period;
+    renderSalesPerformance();
   });
 
   document.getElementById('analyticsStats').addEventListener('click', (event) => {
     const button = event.target.closest('button[data-movement]');
     if (!button) return;
-    state.analyticsMovementFilter = state.analyticsMovementFilter === button.dataset.movement ? null : button.dataset.movement;
-    renderSalesAnalytics();
+    state.analyticsMovementFilter = state.analyticsMovementFilter === button.dataset.movement
+      ? null
+      : button.dataset.movement;
+    computeDashboardMetrics();
   });
 
-  document.getElementById('transactionTypeFilter').addEventListener('change', renderTransactions);
-  document.getElementById('productForm').addEventListener('submit', submitProduct);
-  document.getElementById('transactionForm').addEventListener('submit', submitTransaction);
-  document.getElementById('businessSettingsForm')?.addEventListener('submit', saveBusinessName);
-  document.getElementById('ownerSettingsForm')?.addEventListener('submit', saveOwnerName);
-  (document.getElementById('logoutBtn') || document.getElementById('logoutSessionButton'))?.addEventListener('click', logoutUser);
+  document.getElementById('search').addEventListener('input', (event) => {
+    state.searchText = event.target.value;
+    renderInventory();
+  });
 
-  const accountMenuButton = document.getElementById('accountMenuButton');
-  const accountMenu = document.getElementById('accountMenu');
-  const setAccountMenuOpen = (isOpen) => {
-    if (!accountMenuButton || !accountMenu) return;
-    accountMenu.hidden = !isOpen;
-    accountMenuButton.setAttribute('aria-expanded', String(isOpen));
-  };
-  accountMenuButton?.addEventListener('click', () => {
-    setAccountMenuOpen(accountMenuButton.getAttribute('aria-expanded') !== 'true');
-  });
-  document.addEventListener('click', (event) => {
-    if (accountMenu && accountMenuButton && !event.target.closest('.account-menu-wrap')) {
-      setAccountMenuOpen(false);
-    }
-  });
-  document.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape' && accountMenuButton?.getAttribute('aria-expanded') === 'true') {
-      setAccountMenuOpen(false);
-      accountMenuButton.focus();
-    }
-  });
-  document.querySelectorAll('[data-open-page]').forEach((button) => {
-    button.addEventListener('click', () => showPage(button.dataset.openPage));
-  });
+  document.getElementById('transactionTypeFilter')?.addEventListener('change', renderTransactions);
+
+  document.getElementById('productForm').addEventListener('submit', addProductFromForm);
+  document.getElementById('transactionForm').addEventListener('submit', recordTransaction);
+  document.getElementById('businessSettingsForm').addEventListener('submit', saveBusinessName);
+  document.getElementById('ownerSettingsForm').addEventListener('submit', saveOwnerName);
+  document.getElementById('logoutSessionButton').addEventListener('click', logoutSession);
 
   document.addEventListener('click', (event) => {
     if (event.target.classList.contains('modal')) {
@@ -678,13 +789,18 @@ function bindEvents() {
   });
 }
 
-async function init() {
-  loadProfileSettings();
-  bindEvents();
+function setup() {
+  loadState();
+  initEvents();
+  renderProfileDetails();
+  renderInventory();
+  renderDetails();
+  computeDashboardMetrics();
+  renderTransactions();
   document.getElementById('todayDate').textContent = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
   document.getElementById('todayDay').textContent = new Date().toLocaleDateString('en-US', { weekday: 'long' });
-  await loadCurrentUser();
-  await refreshAll();
 }
 
-init();
+setup();
+
+ 

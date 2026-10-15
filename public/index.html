@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>STOCKPULSE | Inventory & Analytics</title>
+  <link rel="stylesheet" href="style.css?v=2">
+  <style>
+    /* Force spacing for product lists */
+    #productsList div[style*="padding:10px"]{margin:0 0 8px}
+    table{border-collapse:separate;border-spacing:0 4px !important;font-size:12px !important}
+    th{padding:10px 12px !important;font-size:11px}
+    td{padding:10px !important}
+    tbody tr{background:#fff;border-radius:6px !important}
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="pulse">〽</span>
+        <div>
+          <strong>STOCKPULSE</strong>
+          <small> Inventory & Analytics</small>
+        </div>
+      </div>
+
+      <nav class="nav" id="nav">
+        <button class="active" data-page="dashboard"><span class="ico">⌂</span><span class="nav-label">Dashboard</span></button>
+        <button data-page="inventory"><span class="ico">▤</span><span class="nav-label">Inventory</span></button>
+        <button data-page="products"><span class="ico">♧</span><span class="nav-label">Products</span></button>
+        <button data-page="transactions"><span class="ico">▣</span><span class="nav-label">Transactions</span></button>
+        <button data-page="analytics"><span class="ico">⌁</span><span class="nav-label">Analytics</span></button>
+        <button data-page="reports"><span class="ico">▤</span><span class="nav-label">Reports</span></button>
+        <button data-page="alerts"><span class="ico">♧</span><span class="nav-label">Alerts <span id="alertNavDot" class="alert-nav-dot" aria-label="Active low-stock alerts" hidden>●</span></span></button>
+        <button data-page="settings"><span class="ico">⚙</span><span class="nav-label">Settings</span></button>
+      </nav>
+
+      <div class="sidebar-bottom">
+        <span class="shirt-mark">▣</span>
+        <span>Better Stock.<br>Smarter Decisions.</span>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div class="store">
+          <span aria-hidden="true">▣</span>
+          <span class="store-copy"><small>Track products, stock levels, and sales in one place.</small></span>
+        </div>
+        <div class="top-right">
+          <span>♧ <b style="color:#e64d68" id="alertBadge">3</b></span>
+          <button class="account-button" type="button" aria-label="Open account settings" onclick="showPage('settings')">
+            <span class="avatar" aria-hidden="true">👤</span>
+            <span class="account-copy"><b id="ownerNameDisplay">Mark Clarence</b><small id="userRole">Owner</small></span>
+            <span class="account-settings-icon" aria-hidden="true">⚙</span>
+          </button>
+        </div>
+      </header>
+
+      <div class="content">
+        <section class="page active" id="dashboard">
+          <div class="welcome">
+            <div>
+              <h1 id="dashboardBusinessName">My Business</h1>
+              <p>Review your current stock and business activity.</p>
+            </div>
+            <div class="date">▦ &nbsp; <span id="todayDate">June 9, 2025</span><br><small id="todayDay">Monday</small></div>
+          </div>
+
+          <div class="stats" id="dashboardStats">
+            <div class="stat">
+              <div class="stat-icon blue">♧</div>
+              <div>
+                <label>Total Products</label>
+                <h2 id="totalProducts">0</h2>
+                <div class="trend">↑ live</div>
+                <div class="sub">current catalog</div>
+              </div>
+            </div>
+            <div class="stat">
+              <div class="stat-icon green">⬡</div>
+              <div>
+                <label>Total Stock Quantity</label>
+                <h2 id="totalStock">0</h2>
+                <div class="trend">↑ live</div>
+                <div class="sub">in warehouse</div>
+              </div>
+            </div>
+            <div class="stat">
+              <div class="stat-icon purple">🛒</div>
+              <div>
+                <label>Total Sales (This Month)</label>
+                <h2 id="salesTotal">₱ 0</h2>
+                <div class="trend">↑ live</div>
+                <div class="sub">recorded sales</div>
+              </div>
+            </div>
+            <div class="stat">
+              <div class="stat-icon red">⚠</div>
+              <div>
+                <label>Low Stock Items</label>
+                <h2 id="lowStockCount">0</h2>
+                <div class="sub"><span class="pill low">Needs attention</span></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="middle">
+            <div class="panel">
+              <div class="panel-head">
+                <h3>Sales Performance</h3>
+                <div class="tabs" id="salesPeriods" role="group" aria-label="Sales chart grouping">
+                  <button type="button" class="active" data-period="daily" aria-pressed="true">Daily</button>
+                  <button type="button" data-period="monthly" aria-pressed="false">Monthly</button>
+                  <button type="button" data-period="yearly" aria-pressed="false">Yearly</button>
+                </div>
+              </div>
+              <div class="chart chart-empty" id="salesChart" role="img" aria-label="Sales chart">No sales recorded in this period.</div>
+              <div class="chart-labels" id="salesChartLabels"></div>
+              <div class="chart-summary"><span>Revenue: <strong id="salesChartTotal">₱0</strong></span><span>Units sold: <strong id="salesChartUnits">0</strong></span></div>
+            </div>
+
+            <div class="panel">
+              <div class="panel-head"><h3>Product Movement</h3></div>
+              <div class="donut-wrap">
+                <div class="donut">
+                  <div class="donut-center">Total Products<strong id="donutTotal">0</strong></div>
+                </div>
+                <div class="legend" id="movementLegend"></div>
+              </div>
+            </div>
+
+            <div class="panel">
+              <div class="panel-head">
+                <h3>Top Selling Products</h3>
+                <a class="link" onclick="showPage('products')">View All →</a>
+              </div>
+              <div class="top-products" id="topProducts"></div>
+            </div>
+          </div>
+
+          <div class="bottom-grid">
+            <div class="panel">
+              <div class="panel-head">
+                <h3>Recent Transactions</h3>
+                <a class="link" onclick="showPage('transactions')">View All →</a>
+              </div>
+              <div class="table-wrap">
+                <table class="transaction-table">
+                  <thead>
+                    <tr>
+                      <th>Date & Time</th>
+                      <th>Item(s)</th>
+                      <th>Qty</th>
+                      <th>Total Amount</th>
+                      <th>Type</th>
+                    <tr>
+                  <tbody id="recentTransactionsBody"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="panel">
+              <div class="panel-head">
+                <h3>Alerts & Recommendations</h3>
+                <a class="link" onclick="showPage('alerts')">View All →</a>
+              </div>
+              <div id="alertList"></div>
+            </div>
+
+            <div class="panel promo">
+              <div class="hanger">▣</div>
+              <h3>Smart Inventory.<br>Stronger Business.</h3>
+              <p>Track the products and stock that keep your business moving.</p>
+              <button type="button" onclick="showPage('analytics')">View Analytics →</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="page" id="inventory">
+          <div class="inventory-page">
+            <div class="page-title-row">
+              <div><h1>Inventory</h1><p>Search and manage your current stock.</p></div>
+            </div>
+            <div class="inventory-layout">
+              <div class="panel inventory-panel">
+                <div class="toolbar">
+                  <h3>All items</h3>
+                  <div class="search-add">
+                    <label class="visually-hidden" for="search">Search product, code, or category</label>
+                    <input id="search" type="search" placeholder="Search product, code, or category...">
+                    <button class="primary" type="button" onclick="openTransactionModal()" style="padding:7px 12px;font-size:11px">＋ Sale</button>
+                  </div>
+                </div>
+                <div class="filters" id="filters">
+                  <button type="button" class="active" data-filter="All">All</button>
+                  <button type="button" data-filter="Electronics">Electronics</button>
+                  <button type="button" data-filter="Home & Living">Home &amp; Living</button>
+                  <button type="button" data-filter="Food & Beverage">Food &amp; Beverage</button>
+                  <button type="button" data-filter="Health & Beauty">Health &amp; Beauty</button>
+                  <button type="button" data-filter="Office Supplies">Office Supplies</button>
+                  <button type="button" data-filter="Other">Other</button>
+                </div>
+                <div class="table-wrap">
+                  <table>
+                    <thead><tr><th>Image</th><th>Product Name</th><th>Category</th><th>Unit Price</th><th>Stock</th><th>Status</th><th>Action</th></tr></thead>
+                    <tbody id="inventoryRows"></tbody>
+                  </table>
+                </div>
+                <div class="pagination"><span id="showing">Showing products</span></div>
+              </div>
+              <div class="panel details">
+                <div class="panel-head">
+                  <h3>Product Details</h3>
+                  <div class="detail-actions">
+                    <button class="secondary-btn" id="editProductButton" type="button" onclick="editSelected()">Edit</button>
+                    <button class="danger-btn" id="deleteProductButton" type="button" onclick="deleteSelected()">Delete</button>
+                  </div>
+                </div>
+                <div id="productDetails"></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="page" id="products">
+          <div class="simple-page">
+            <div class="products-page-header">
+              <h2>Products</h2>
+              <button class="primary" id="productsAddButton" type="button" onclick="openProductModal()" hidden>＋ Add Product</button>
+            </div>
+            <div id="productsList" class="products-list" style="margin-top:16px"></div>
+          </div>
+        </section>
+
+        <section class="page" id="transactions">
+          <div class="simple-page">
+            <h2>Transactions</h2>
+            <p>Sales and stock movement records.</p>
+            <div class="form-row">
+              <div class="search-add">
+                <select id="transactionTypeFilter">
+                  <option value="All">All transaction types</option>
+                  <option value="Sale">Sale</option>
+                  <option value="Stock In">Stock In</option>
+                  <option value="Return">Return</option>
+                </select>
+              </div>
+              <button class="primary" type="button" onclick="openTransactionModal()">＋ Record Transaction</button>
+            </div>
+            <div id="transactionsList" class="transactions-list"></div>
+          </div>
+        </section>
+
+        <section class="page" id="analytics">
+          <div class="simple-page">
+            <h2>Inventory Analytics</h2>
+            <p>Product movement and sales quantity from recorded transactions.</p>
+            <div class="stat analytics-total">
+              <div><label>Total units sold</label><h2 id="analyticsTotalUnits">0</h2><div class="sub">across all products</div></div>
+              <div><label>Total revenue</label><h2 id="analyticsTotalRevenue">₱ 0</h2><div class="sub">this month</div></div>
+            </div>
+            <div class="stats" id="analyticsStats"></div>
+            <h3 class="analytics-table-title" id="analyticsProductHeading">Units sold by product</h3>
+            <div class="table-wrap">
+              <table class="analytics-sales-table">
+                <thead><tr><th>Product</th><th>Category</th><th>Units sold</th><th>Revenue</th></tr></thead>
+                <tbody id="analyticsSalesRows"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <section class="page" id="reports">
+          <div class="simple-page">
+            <h2>Reports</h2>
+            <p>Generate inventory, sales, and product movement reports.</p>
+            <div class="form-row">
+              <select>
+                <option>Inventory Summary</option>
+                <option>Sales Report</option>
+                <option>Product Movement</option>
+                <option>Low Stock Report</option>
+              </select>
+              <input type="date">
+              <input type="date">
+              <button class="primary" type="button" onclick="window.print()">Print / Save PDF</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="page" id="alerts">
+          <div class="simple-page">
+            <h2>Alerts & Recommendations</h2>
+            <p>Review low-stock alerts and rule-based recommendations.</p>
+            <div id="alertsPageList"></div>
+          </div>
+        </section>
+
+        <section class="page" id="settings">
+          <div class="simple-page">
+            <h2>Settings</h2>
+            <p>Manage your business profile and account session.</p>
+            <section class="settings-section" aria-labelledby="businessSettingsTitle">
+              <h3 id="businessSettingsTitle">Business name</h3>
+              <p>This name appears in the dashboard header.</p>
+              <form id="businessSettingsForm" class="business-settings-form">
+                <label for="businessNameInput">Business name</label>
+                <div class="form-row">
+                  <input id="businessNameInput" name="businessName" type="text" maxlength="80" autocomplete="organization" required>
+                  <button class="primary" type="submit">Save business name</button>
+                </div>
+              </form>
+            </section>
+            <section class="settings-section" aria-labelledby="ownerSettingsTitle">
+              <h3 id="ownerSettingsTitle">Owner name</h3>
+              <p>This name appears in the upper-right account menu.</p>
+              <form id="ownerSettingsForm" class="business-settings-form">
+                <label for="ownerNameInput">Owner name</label>
+                <div class="form-row">
+                  <input id="ownerNameInput" name="ownerName" type="text" maxlength="80" autocomplete="name" required>
+                  <button class="primary" type="submit">Save owner name</button>
+                </div>
+              </form>
+            </section>
+            <section class="settings-section session-settings" aria-labelledby="sessionSettingsTitle">
+              <div>
+                <h3 id="sessionSettingsTitle">Session</h3>
+                <p>Sign out of your STOCKPULSE account on this device.</p>
+              </div>
+              <button class="danger-btn" id="logoutSessionButton" type="button">Log out</button>
+            </section>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <div class="modal hidden" id="productModal" aria-modal="true" role="dialog">
+    <div class="modal-card">
+      <div class="modal-head">
+        <h3 id="productModalTitle">Add Product</h3>
+        <button type="button" class="close-btn" onclick="closeModal('productModal')">×</button>
+      </div>
+      <form id="productForm">
+        <div class="form-grid">
+          <label>
+            Product Name
+            <input type="text" name="name" required>
+          </label>
+          <label>
+            Product ID
+            <input type="text" name="id" required>
+          </label>
+          <label>
+            Category
+            <select name="category">
+              <option>Electronics</option>
+              <option>Home &amp; Living</option>
+              <option>Food &amp; Beverage</option>
+              <option>Health &amp; Beauty</option>
+              <option>Office Supplies</option>
+              <option>Other</option>
+            </select>
+          </label>
+          <label>
+            Unit Price
+            <input type="number" name="price" min="0" step="0.01" required>
+          </label>
+          <label>
+            Stock Quantity
+            <input type="number" name="stock" min="0" step="1" required>
+          </label>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="secondary-btn" onclick="closeModal('productModal')">Cancel</button>
+          <button type="submit" class="primary">Save Product</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal hidden" id="transactionModal" aria-modal="true" role="dialog">
+    <div class="modal-card small">
+      <div class="modal-head">
+        <h3>Record Transaction</h3>
+        <button type="button" class="close-btn" onclick="closeModal('transactionModal')">×</button>
+      </div>
+      <form id="transactionForm">
+        <div class="form-grid single">
+          <label>
+            Product
+            <select name="productId" id="transactionProductSelect" required></select>
+          </label>
+          <label>
+            Type
+            <select name="type">
+              <option>Sale</option>
+              <option>Stock In</option>
+              <option>Return</option>
+            </select>
+          </label>
+          <label>
+            Quantity
+            <input type="number" name="quantity" min="1" step="1" required>
+          </label>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="secondary-btn" onclick="closeModal('transactionModal')">Cancel</button>
+          <button type="submit" class="primary">Save</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+  <script src="script.js"></script>
+</body>
+</html>
