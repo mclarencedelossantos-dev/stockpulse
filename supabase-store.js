@@ -1,0 +1,402 @@
+const { createClient } = require('@supabase/supabase-js');
+const crypto = require('crypto');
+const session = require('express-session');
+
+let supabaseClient;
+const seedTasks = new Map();
+const configured = Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
+
+function getSupabaseClient() {
+  if (supabaseClient) return supabaseClient;
+
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!supabaseUrl || !serviceRoleKey) {
+    throw new Error('Supabase is not configured. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in the server environment.');
+  }
+
+  supabaseClient = createClient(supabaseUrl, serviceRoleKey, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false
+    }
+  });
+  return supabaseClient;
+}
+
+function normalizeUserId(userId) {
+  const normalized = String(userId || '').trim();
+  if (!normalized) throw new TypeError('A user ID is required.');
+  return normalized;
+}
+
+async function savePortfolioSupabase(userId, symbol, shares) {
+  const normalizedUserId = normalizeUserId(userId);
+  const stockSymbol = String(symbol || '').trim().toUpperCase();
+  if (!stockSymbol) throw new TypeError('A stock symbol is required.');
+  if (!Number.isSafeInteger(shares) || shares <= 0) {
+    throw new TypeError('Shares must be a positive whole number.');
+  }
+
+  const { data, error } = await getSupabaseClient()
+    .from('portfolios')
+    .insert({ user_id: normalizedUserId, stock_symbol: stockSymbol, shares })
+    .select('id, user_id, stock_symbol, shares, created_at')
+    .single();
+
+  if (error) throw error;
+  return data;
+}
+
+async function getPortfolioSupabase(userId) {
+  const normalizedUserId = normalizeUserId(userId);
+  const { data, error } = await getSupabaseClient()
+    .from('portfolios')
+    .select('id, user_id, stock_symbol, shares, created_at')
+    .eq('user_id', normalizedUserId)
+    .order('created_at', { ascending: false });
+
+  if (error) throw error;
+  return data || [];
+}
+
+function throwIfError(result) {
+  if (result.error) throw result.error;
+  return result.data;
+}
+
+function tenantPrefix(userId) {
+  const tenantHash = crypto.createHash('sha256').update(normalizeUserId(userId)).digest('hex').slice(0, 16);
+  return `u${tenantHash}_`;
+}
+
+function toStoredId(userId, id) {
+  const value = String(id);
+  const prefix = tenantPrefix(userId);
+  return value.startsWith(prefix) ? value : `${prefix}${value}`;
+}
+
+function toPublicId(userId, id) {
+  const value = String(id);
+  const prefix = tenantPrefix(userId);
+  return value.startsWith(prefix) ? value.slice(prefix.length) : value;
+}
+
+function mapProduct(userId, row) {
+  return { ...row, id: toPublicId(userId, row.id) };
+}
+
+function mapTransaction(row, userId) {
+  return {
+    id: toPublicId(userId, row.id),
+    productId: toPublicId(userId, row.product_id),
+    productName: row.product_name,
+    type: row.type,
+    quantity: row.quantity,
+    amount: Number(row.amount),
+    date: row.date
+  };
+}
+
+function toTransactionRow(record) {
+  return {
+    id: record.id,
+    product_id: record.productId,
+    product_name: record.productName,
+    type: record.type,
+    quantity: record.quantity,
+    amount: record.amount,
+    date: record.date
+  };
+}
+
+async function ensureUserSeeded(userId, isAdmin = false) {
+  const normalizedUserId = normalizeUserId(userId);
+  if (seedTasks.has(normalizedUserId)) return seedTasks.get(normalizedUserId);
+  const seedTask = (async () => {
+    const client = getSupabaseClient();
+    const { error } = await client.rpc('seed_user_inventory', {
+      p_user_id: normalizedUserId,
+      p_is_admin: Boolean(isAdmin),
+      p_products: [],
+      p_transactions: []
+    });
+    if (error) throw error;
+  })();
+  seedTasks.set(normalizedUserId, seedTask);
+  try {
+    await seedTask;
+  } catch (error) {
+    seedTasks.delete(normalizedUserId);
+    throw error;
+  }
+}
+
+async function listProducts(userId, isAdmin = false) {
+  const normalizedUserId = normalizeUserId(userId);
+  await ensureUserSeeded(normalizedUserId, isAdmin);
+  const { data, error } = await getSupabaseClient()
+    .from('products')
+    .select('*')
+    .eq('user_id', normalizedUserId);
+  if (error) throw error;
+  return (data || []).map((row) => mapProduct(normalizedUserId, row));
+}
+
+async function listTransactions(userId, isAdmin = false) {
+  const normalizedUserId = normalizeUserId(userId);
+  await ensureUserSeeded(normalizedUserId, isAdmin);
+  const { data, error } = await getSupabaseClient()
+    .from('transactions')
+    .select('*')
+    .eq('user_id', normalizedUserId)
+    .order('date', { ascending: false });
+  if (error) throw error;
+  return (data || []).map((row) => mapTransaction(row, normalizedUserId));
+}
+
+async function readInventory(userId, isAdmin = false) {
+  const [products, transactions] = await Promise.all([
+    listProducts(userId, isAdmin),
+    listTransactions(userId, isAdmin)
+  ]);
+  return { products, transactions };
+}
+
+async function createProduct(userId, product, isAdmin = false) {
+  const normalizedUserId = normalizeUserId(userId);
+  await ensureUserSeeded(normalizedUserId, isAdmin);
+  const storedProduct = {
+    ...product,
+    id: toStoredId(normalizedUserId, product.id),
+    user_id: normalizedUserId
+  };
+  const { data, error } = await getSupabaseClient()
+    .from('products')
+    .insert(storedProduct)
+    .select('*')
+    .single();
+  if (error) throw error;
+  return mapProduct(normalizedUserId, data);
+}
+
+async function updateProduct(userId, id, changes, isAdmin = false) {
+  const normalizedUserId = normalizeUserId(userId);
+  await ensureUserSeeded(normalizedUserId, isAdmin);
+  const client = getSupabaseClient();
+  const scopedId = toStoredId(normalizedUserId, id);
+  let storedId = scopedId;
+  let { data: current, error: readError } = await client
+    .from('products')
+    .select('*')
+    .eq('id', scopedId)
+    .eq('user_id', normalizedUserId)
+    .maybeSingle();
+  if (readError) throw readError;
+  if (!current && isAdmin && scopedId !== id) {
+    storedId = id;
+    const legacyResult = await client.from('products').select('*').eq('id', id).eq('user_id', normalizedUserId).maybeSingle();
+    if (legacyResult.error) throw legacyResult.error;
+    current = legacyResult.data;
+  }
+  if (!current) return null;
+
+  const publicProduct = mapProduct(normalizedUserId, current);
+  const update = typeof changes === 'function' ? changes(publicProduct) : changes;
+  const { data, error } = await client
+    .from('products')
+    .update(update)
+    .eq('id', storedId)
+    .eq('user_id', normalizedUserId)
+    .select('*')
+    .single();
+  if (error) throw error;
+  return mapProduct(normalizedUserId, data);
+}
+
+async function deleteProduct(userId, id, isAdmin = false) {
+  const normalizedUserId = normalizeUserId(userId);
+  await ensureUserSeeded(normalizedUserId, isAdmin);
+  const client = getSupabaseClient();
+  let storedId = toStoredId(normalizedUserId, id);
+  let { data, error } = await client
+    .from('products')
+    .delete()
+    .eq('id', storedId)
+    .eq('user_id', normalizedUserId)
+    .select('id')
+    .maybeSingle();
+  if (error) throw error;
+  if (!data && isAdmin && storedId !== id) {
+    storedId = id;
+    const legacyResult = await client.from('products').delete().eq('id', id).eq('user_id', normalizedUserId).select('id').maybeSingle();
+    if (legacyResult.error) throw legacyResult.error;
+    data = legacyResult.data;
+  }
+  return Boolean(data);
+}
+
+async function createInventoryTransaction(userId, record, stockDelta, isAdmin = false) {
+  const normalizedUserId = normalizeUserId(userId);
+  await ensureUserSeeded(normalizedUserId, isAdmin);
+  const storedRecord = {
+    ...record,
+    id: toStoredId(normalizedUserId, record.id),
+    productId: toStoredId(normalizedUserId, record.productId)
+  };
+  const { data, error } = await getSupabaseClient().rpc('record_inventory_transaction', {
+    p_user_id: normalizedUserId,
+    p_record: storedRecord,
+    p_stock_delta: stockDelta
+  });
+  if (error) throw error;
+  return {
+    ...data,
+    transaction: data && data.transaction
+      ? {
+        ...data.transaction,
+        id: toPublicId(normalizedUserId, data.transaction.id),
+        productId: toPublicId(normalizedUserId, data.transaction.productId)
+      }
+      : data && data.transaction
+  };
+}
+
+async function requestEmailCode(email, codeHash, now) {
+  const { data, error } = await getSupabaseClient().rpc('request_login_code', {
+    p_email: String(email).toLowerCase(),
+    p_code_hash: codeHash,
+    p_now: new Date(now).toISOString()
+  });
+  if (error) throw error;
+  return data;
+}
+
+async function consumeEmailCode(email, codeHash, now) {
+  const { data, error } = await getSupabaseClient().rpc('consume_login_code', {
+    p_email: String(email).toLowerCase(),
+    p_code_hash: codeHash,
+    p_now: new Date(now).toISOString()
+  });
+  if (error) throw error;
+  return data;
+}
+
+function mapUser(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    username: row.username,
+    email: row.email,
+    name: row.name,
+    role: row.role,
+    provider: row.provider,
+    totpSecret: row.totp_secret,
+    totpEnabled: row.totp_enabled
+  };
+}
+
+async function getUserByEmail(email) {
+  const { data, error } = await getSupabaseClient()
+    .from('users')
+    .select('*')
+    .eq('email', String(email).toLowerCase())
+    .maybeSingle();
+  if (error) throw error;
+  return mapUser(data);
+}
+
+async function getOrCreateEmailUser(email, name, role) {
+  const normalizedEmail = String(email).toLowerCase();
+  const existing = await getUserByEmail(normalizedEmail);
+  if (existing) return existing;
+
+  const user = {
+    id: `email:${normalizedEmail}`,
+    username: normalizedEmail,
+    email: normalizedEmail,
+    name: name || normalizedEmail,
+    role: role || 'manager',
+    provider: 'email',
+    totp_secret: '',
+    totp_enabled: false
+  };
+  const { data, error } = await getSupabaseClient()
+    .from('users')
+    .insert(user)
+    .select('*')
+    .single();
+  if (error && error.code === '23505') return getUserByEmail(normalizedEmail);
+  if (error) throw error;
+  return mapUser(data);
+}
+
+async function setUserTOTP(email, secret, enabled) {
+  const normalizedEmail = String(email).toLowerCase();
+  const user = await getOrCreateEmailUser(normalizedEmail, normalizedEmail, 'manager');
+  const { data, error } = await getSupabaseClient()
+    .from('users')
+    .update({ totp_secret: String(secret || user.totpSecret || ''), totp_enabled: Boolean(enabled) })
+    .eq('email', normalizedEmail)
+    .select('*')
+    .single();
+  if (error) throw error;
+  return mapUser(data);
+}
+
+class SupabaseSessionStore extends session.Store {
+  get(sid, callback) {
+    getSupabaseClient().from('sessions').select('session, expires_at').eq('sid', sid).maybeSingle()
+      .then(async ({ data, error }) => {
+        if (error) return callback(error);
+        if (!data) return callback(null, null);
+        if (new Date(data.expires_at).getTime() <= Date.now()) {
+          await getSupabaseClient().from('sessions').delete().eq('sid', sid);
+          return callback(null, null);
+        }
+        return callback(null, data.session);
+      })
+      .catch(callback);
+  }
+
+  set(sid, value, callback = () => {}) {
+    const expiry = value.cookie && value.cookie.expires
+      ? new Date(value.cookie.expires)
+      : new Date(Date.now() + Number(value.cookie && value.cookie.maxAge || 8 * 60 * 60 * 1000));
+    getSupabaseClient().from('sessions').upsert({ sid, session: value, expires_at: expiry.toISOString() }, { onConflict: 'sid' })
+      .then(({ error }) => callback(error || null))
+      .catch(callback);
+  }
+
+  touch(sid, value, callback) {
+    this.set(sid, value, callback);
+  }
+
+  destroy(sid, callback = () => {}) {
+    getSupabaseClient().from('sessions').delete().eq('sid', sid)
+      .then(({ error }) => callback(error || null))
+      .catch(callback);
+  }
+}
+
+module.exports = {
+  configured,
+  ensureUserSeeded,
+  listProducts,
+  listTransactions,
+  readInventory,
+  createProduct,
+  updateProduct,
+  deleteProduct,
+  createInventoryTransaction,
+  requestEmailCode,
+  consumeEmailCode,
+  getUserByEmail,
+  getOrCreateEmailUser,
+  setUserTOTP,
+  SupabaseSessionStore,
+  getPortfolio: getPortfolioSupabase,
+  getPortfolioSupabase,
+  savePortfolio: savePortfolioSupabase,
+  savePortfolioSupabase
+};

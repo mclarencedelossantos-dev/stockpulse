@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>STOCKPULSE Login</title>
+    <style>
+      :root {
+        --navy: #071b35;
+        --blue: #1769e8;
+        --bg: #eef4ff;
+        --line: #dfe9f6;
+        --text: #1f2c39;
+      }
+
+      * { box-sizing: border-box; }
+      [hidden] { display: none !important; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        background: linear-gradient(135deg, #edf4ff, #dfeeff 45%, #f7f9ff);
+        font-family: Inter, "Segoe UI", Arial, sans-serif;
+        color: var(--text);
+      }
+
+      .login-card {
+        width: min(420px, 92vw);
+        background: rgba(255,255,255,0.96);
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        box-shadow: 0 18px 55px rgba(10, 26, 50, 0.14);
+        padding: 28px 24px;
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
+        margin-bottom: 18px;
+      }
+
+      .brand-mark {
+        width: 46px;
+        height: 46px;
+        border-radius: 14px;
+        display: grid;
+        place-items: center;
+        background: linear-gradient(135deg, var(--navy), var(--blue));
+        color: white;
+        font-weight: 700;
+        font-size: 22px;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 26px;
+      }
+
+      .sub {
+        text-align: center;
+        color: #64748b;
+        margin: 8px 0 22px;
+        font-size: 13px;
+      }
+
+      label {
+        display: block;
+        margin-bottom: 10px;
+        font-size: 12px;
+        color: #465a73;
+        font-weight: 600;
+      }
+
+      input {
+        width: 100%;
+        padding: 12px 12px;
+        border-radius: 10px;
+        border: 1px solid var(--line);
+        margin-top: 6px;
+        font-size: 14px;
+      }
+
+      button {
+        width: 100%;
+        border: none;
+        border-radius: 10px;
+        padding: 12px 14px;
+        background: linear-gradient(135deg, var(--blue), #0c66d4);
+        color: white;
+        font-size: 14px;
+        font-weight: 700;
+        cursor: pointer;
+        margin-top: 8px;
+      }
+
+      .helper {
+        margin-top: 18px;
+        background: #f3f7ff;
+        border: 1px solid #dfe9ff;
+        border-radius: 10px;
+        padding: 12px;
+        font-size: 12px;
+        color: #44577d;
+      }
+
+      .totp-box {
+        margin-top: 16px;
+        padding: 18px 16px;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: #f8fbff;
+      }
+
+      .totp-box img {
+        display: block;
+        width: min(220px, 100%);
+        margin: 0 auto 12px;
+        background: white;
+        border-radius: 12px;
+        padding: 12px;
+      }
+
+      .code-button {
+        display: block;
+        width: 100%;
+        border: 1px solid #dfe9f6;
+        background: white;
+        color: var(--text);
+        border-radius: 10px;
+        padding: 12px 14px;
+        font-size: 14px;
+        font-weight: 700;
+        cursor: pointer;
+        margin-top: 12px;
+      }
+
+      .error {
+        min-height: 18px;
+        margin-top: 10px;
+        color: #b8274f;
+        font-size: 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="login-card">
+      <div class="brand">
+        <div class="brand-mark">S</div>
+        <h1>STOCKPULSE</h1>
+      </div>
+      <div class="sub">Sign in to access inventory intelligence and sales operations.</div>
+
+      <form id="requestCodeForm">
+        <label>
+          Email address
+          <input type="email" id="email" name="email" placeholder="@gmail.com" autocomplete="email" required />
+        </label>
+        <button id="requestCodeButton" class="code-button" type="submit">Send sign-in code</button>
+      </form>
+
+      <form id="verifyCodeForm" hidden>
+        <p id="sentTo"></p>
+        <label>
+          Six-digit code
+          <input type="text" id="code" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" placeholder="000000" required />
+        </label>
+        <button class="code-button" type="submit">Verify and continue</button>
+        <button id="changeEmailButton" type="button" style="background:transparent;color:var(--blue)">Use a different email</button>
+      </form>
+
+      <div id="totpSetupSection" class="totp-box" hidden>
+        <img id="totpQrCode" alt="Google Authenticator QR code" />
+        <p id="totpSetupMessage">Scan the QR code with Google Authenticator, then enter the 6-digit code below.</p>
+        <form id="totpSetupForm">
+          <label>
+            Six-digit Google Authenticator code
+            <input type="text" id="totpSetupCode" name="totpSetupCode" inputmode="numeric" maxlength="6" placeholder="000000" required />
+          </label>
+          <button class="code-button" type="submit">Enable Google Authenticator</button>
+        </form>
+      </div>
+
+      <div id="totpVerifySection" class="totp-box" hidden>
+        <p>Enter the current Google Authenticator code to finish signing in.</p>
+        <form id="totpVerifyForm">
+          <label>
+            Six-digit Google Authenticator code
+            <input type="text" id="totpVerifyCode" name="totpVerifyCode" inputmode="numeric" maxlength="6" placeholder="000000" required />
+          </label>
+          <button class="code-button" type="submit">Verify and sign in</button>
+        </form>
+      </div>
+
+      <p class="error" id="loginStatus" role="status" aria-live="polite"></p>
+      <div class="helper">Enter any valid email address. A sign-in code will be sent to that email, and it expires after 10 minutes.</div>
+    </div>
+
+    <script>
+      const emailInput = document.getElementById('email');
+      const requestForm = document.getElementById('requestCodeForm');
+      const verifyForm = document.getElementById('verifyCodeForm');
+      const totpSetupSection = document.getElementById('totpSetupSection');
+      const totpSetupForm = document.getElementById('totpSetupForm');
+      const totpVerifySection = document.getElementById('totpVerifySection');
+      const totpVerifyForm = document.getElementById('totpVerifyForm');
+      const statusBox = document.getElementById('loginStatus');
+
+      function resetAuthForms() {
+        requestForm.hidden = false;
+        verifyForm.hidden = true;
+        totpSetupSection.hidden = true;
+        totpVerifySection.hidden = true;
+        document.getElementById('code').value = '';
+        document.getElementById('totpSetupCode').value = '';
+        document.getElementById('totpVerifyCode').value = '';
+        document.getElementById('totpQrCode').src = '';
+      }
+
+      async function loadConfig() {
+        try {
+          const response = await fetch('/api/auth/config');
+          const data = await response.json();
+          if (!data.emailEnabled) {
+            document.getElementById('requestCodeButton').disabled = true;
+            statusBox.textContent = 'Email sign-in is not configured. The administrator must configure SMTP and approved email addresses.';
+          }
+        } catch (error) {
+          document.getElementById('requestCodeButton').disabled = true;
+          console.error('Auth config fetch failed:', error);
+          statusBox.textContent = 'Sign-in service unavailable. Start the app server with "npm start" and open http://localhost:3000/login.';
+        }
+      }
+
+      async function requestCode(event) {
+        event.preventDefault();
+        statusBox.textContent = '';
+
+        try {
+          const response = await fetch('/api/auth/email/request-code', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: emailInput.value.trim() })
+          });
+          const data = await response.json().catch(() => ({}));
+          if (!response.ok) throw new Error(data.message || 'Unable to send a sign-in code.');
+          requestForm.hidden = true;
+          verifyForm.hidden = false;
+          totpSetupSection.hidden = true;
+          totpVerifySection.hidden = true;
+          const codeMessage = data.code ? `Development code: ${data.code}` : `If approved, a code was sent to ${emailInput.value.trim()}.`;
+          document.getElementById('sentTo').textContent = codeMessage;
+          statusBox.textContent = data.message || '';
+          if (data.code) {
+            document.getElementById('code').value = data.code;
+          }
+          document.getElementById('code').focus();
+        } catch (error) {
+          statusBox.textContent = error.message || 'Unable to send a sign-in code.';
+        }
+      }
+
+      async function verifyCode(event) {
+        event.preventDefault();
+        statusBox.textContent = '';
+        try {
+          const response = await fetch('/api/auth/email/verify-code', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: emailInput.value.trim(), code: document.getElementById('code').value.trim() })
+          });
+          const data = await response.json().catch(() => ({}));
+          if (!response.ok) throw new Error(data.message || 'Unable to verify the code.');
+
+          if (data.needsTotp) {
+            if (data.totpEnabled === false) {
+              const setupResponse = await fetch('/api/auth/totp/setup', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email: emailInput.value.trim() })
+              });
+              const setupData = await setupResponse.json().catch(() => ({}));
+              if (!setupResponse.ok) throw new Error(setupData.message || 'Unable to set up Google Authenticator.');
+              document.getElementById('totpQrCode').src = setupData.qrCode;
+              totpSetupSection.hidden = false;
+              totpVerifySection.hidden = false;
+              requestForm.hidden = true;
+              verifyForm.hidden = true;
+              statusBox.textContent = 'Scan the QR code and enable Google Authenticator.';
+              return;
+            }
+
+            totpVerifySection.hidden = false;
+            requestForm.hidden = true;
+            verifyForm.hidden = true;
+            totpSetupSection.hidden = true;
+            statusBox.textContent = 'Enter the current Google Authenticator code to continue.';
+            return;
+          }
+
+          window.location.href = '/';
+        } catch (error) {
+          statusBox.textContent = error.message || 'Unable to verify the code.';
+        }
+      }
+
+      async function enableTotp(event) {
+        event.preventDefault();
+        statusBox.textContent = '';
+        try {
+          const response = await fetch('/api/auth/totp/enable', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: emailInput.value.trim(), code: document.getElementById('totpSetupCode').value.trim() })
+          });
+          const data = await response.json().catch(() => ({}));
+          if (!response.ok) throw new Error(data.message || 'Unable to enable Google Authenticator.');
+          window.location.href = '/';
+        } catch (error) {
+          statusBox.textContent = error.message || 'Unable to enable Google Authenticator.';
+        }
+      }
+
+      async function verifyTotp(event) {
+        event.preventDefault();
+        statusBox.textContent = '';
+        try {
+          const response = await fetch('/api/auth/totp/verify', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: emailInput.value.trim(), code: document.getElementById('totpVerifyCode').value.trim() })
+          });
+          const data = await response.json().catch(() => ({}));
+          if (!response.ok) throw new Error(data.message || 'Unable to verify the Google Authenticator code.');
+          window.location.href = '/';
+        } catch (error) {
+          statusBox.textContent = error.message || 'Unable to verify the Google Authenticator code.';
+        }
+      }
+
+      document.getElementById('sentTo').textContent = '';
+      document.getElementById('changeEmailButton').addEventListener('click', () => {
+        resetAuthForms();
+        statusBox.textContent = '';
+      });
+      requestForm.addEventListener('submit', requestCode);
+      verifyForm.addEventListener('submit', verifyCode);
+      totpSetupForm.addEventListener('submit', enableTotp);
+      totpVerifyForm.addEventListener('submit', verifyTotp);
+      loadConfig();
+    </script>
+  </body>
+</html>

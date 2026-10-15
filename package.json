@@ -1,0 +1,19 @@
+{
+  "name": "stockpulse",
+  "version": "1.0.0",
+  "description": "STOCKPULSE inventory analytics and transaction management web app",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.57.0",
+    "dotenv": "^18.0.4",
+    "express": "^4.21.2",
+    "express-session": "^1.19.0",
+    "nodemailer": "^10.0.12",
+    "otplib": "^13.5.0",
+    "qrcode": "^1.5.4"
+  }
+}

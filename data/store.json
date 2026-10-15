@@ -1,0 +1,117 @@
+{
+  "products": [
+    {
+      "id": "OST-001",
+      "name": "Oversized T-Shirt",
+      "category": "T-Shirts",
+      "emoji": "👕",
+      "price": 399,
+      "stock": 142,
+      "sizes": ["S", "M", "L", "XL"],
+      "colors": ["Black", "Gray", "White", "Blue"],
+      "variants": [25, 38, 12, 8]
+    },
+    {
+      "id": "CP-002",
+      "name": "Cargo Pants",
+      "category": "Pants",
+      "emoji": "👖",
+      "price": 1099,
+      "stock": 86,
+      "sizes": ["S", "M", "L", "XL"],
+      "colors": ["Gray", "Black", "White"],
+      "variants": [20, 30, 22, 14]
+    },
+    {
+      "id": "HD-003",
+      "name": "Hoodie",
+      "category": "Hoodies",
+      "emoji": "🧥",
+      "price": 1299,
+      "stock": 64,
+      "sizes": ["S", "M", "L", "XL"],
+      "colors": ["Black", "Gray", "Red"],
+      "variants": [0, 18, 24, 22]
+    },
+    {
+      "id": "DJ-004",
+      "name": "Denim Jacket",
+      "category": "Jackets",
+      "emoji": "🧥",
+      "price": 1599,
+      "stock": 32,
+      "sizes": ["S", "M", "L", "XL"],
+      "colors": ["Blue", "Black"],
+      "variants": [5, 10, 9, 8]
+    },
+    {
+      "id": "BS-005",
+      "name": "Basic Shirt",
+      "category": "T-Shirts",
+      "emoji": "👕",
+      "price": 399,
+      "stock": 120,
+      "sizes": ["S", "M", "L", "XL"],
+      "colors": ["White", "Gray", "Blue", "Black"],
+      "variants": [25, 30, 35, 30]
+    },
+    {
+      "id": "SH-006",
+      "name": "Shorts",
+      "category": "Pants",
+      "emoji": "🩳",
+      "price": 599,
+      "stock": 18,
+      "sizes": ["S", "M", "L", "XL"],
+      "colors": ["Blue", "Black"],
+      "variants": [3, 5, 6, 4]
+    }
+  ],
+  "transactions": [
+    {
+      "id": "TX-1001",
+      "productId": "OST-001",
+      "productName": "Oversized T-Shirt",
+      "type": "Sale",
+      "quantity": 2,
+      "amount": 798,
+      "date": "2026-09-09T10:24:00"
+    },
+    {
+      "id": "TX-1002",
+      "productId": "CP-002",
+      "productName": "Cargo Pants",
+      "type": "Sale",
+      "quantity": 1,
+      "amount": 1099,
+      "date": "2026-09-09T09:17:00"
+    },
+    {
+      "id": "TX-1003",
+      "productId": "HD-003",
+      "productName": "Hoodie",
+      "type": "Sale",
+      "quantity": 1,
+      "amount": 1299,
+      "date": "2026-09-08T18:32:00"
+    },
+    {
+      "id": "TX-1004",
+      "productId": "BS-005",
+      "productName": "Basic Shirt",
+      "type": "Sale",
+      "quantity": 3,
+      "amount": 1197,
+      "date": "2026-09-08T16:21:00"
+    },
+    {
+      "id": "TX-1005",
+      "productId": "DJ-004",
+      "productName": "Denim Jacket",
+      "type": "Stock In",
+      "quantity": 10,
+      "amount": 0,
+      "date": "2026-09-06T11:00:00"
+    }
+  ]
+}
